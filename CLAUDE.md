@@ -40,8 +40,11 @@
   together.
 - **Stage only the files you changed, by path** (`git add <paths>`). Never use
   `git add -A` or `git add .`: the working tree often holds the user's own uncommitted
-  work. If a file you edited already had the user's uncommitted changes, leave it out
-  and say so, since hunks can't be split non-interactively here.
+  work.
+- **When a file mixes your changes with the user's,** stage only your hunks. Interactive
+  `git add -p` can't be answered here, so write a patch of just your hunks to the
+  scratchpad, then run `git apply --cached <patch>` and check `git diff --cached`. If
+  your lines and the user's fall in the same hunk, leave that file out and say so.
 - **Long commit messages:** write them to a scratchpad file and use `git commit -F`,
   not an inline heredoc (see below).
 
