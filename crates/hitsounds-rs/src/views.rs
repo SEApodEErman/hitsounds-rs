@@ -190,7 +190,6 @@ fn caption(
     .inner
 }
 
-/// One menu row. Closes the menu when chosen.
 /// A hover text with the action's current key, if it has one (D-92).
 fn shortcut_hint(text: &str, action: Action) -> String {
     match keys::label(action) {
@@ -199,6 +198,7 @@ fn shortcut_hint(text: &str, action: Action) -> String {
     }
 }
 
+/// One menu row. Closes the menu when chosen.
 fn item(ui: &mut Ui, label: &str, shortcut: &str, enabled: bool) -> bool {
     row(ui, false, label, shortcut, enabled)
 }
