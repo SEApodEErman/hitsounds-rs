@@ -146,10 +146,15 @@ Separate the drum stem inside the app instead of importing one from a website.
   release choice, checksum lists and the flat-archive rule.
 - [x] Inno Setup per-user installer, portable zip, `tools/package.ps1` (D-85).
 - [x] CI workflow; release workflow that drafts a GitHub release from a version tag.
-- [ ] Push the repository to GitHub (public) and tag `v0.1.0-alpha.1`.
+- [x] Push the repository to GitHub (public) and tag `v0.1.0-alpha.1` (and `alpha.2`).
 - [ ] End-to-end update test: install `alpha.1`, publish `alpha.2`, check that the
   installed and the portable copy both update and restart. Not yet run.
 - [ ] Code signing before a wider release.
+
+## Beta release (D-85)
+- [x] Version `0.1.0-beta.1`; alpha installs pick it up (unit test in `update.rs`).
+- [ ] Push `main` and tag `v0.1.0-beta.1`; review the drafted notes and publish.
+- [ ] Check that an installed `alpha.2` updates to the beta and restarts.
 
 ## Later (post-MVP)
 - Loop range, tap-to-record (D-53). Copy/paste of hits is done (D-88).

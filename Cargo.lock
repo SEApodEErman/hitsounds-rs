@@ -1495,7 +1495,7 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "hitsounds-rs"
-version = "0.1.0-alpha.2"
+version = "0.1.0-beta.1"
 dependencies = [
  "dirs",
  "eframe",
@@ -1529,7 +1529,7 @@ dependencies = [
 
 [[package]]
 name = "hs-audio"
-version = "0.1.0-alpha.2"
+version = "0.1.0-beta.1"
 dependencies = [
  "cpal",
  "rubato",
@@ -1539,7 +1539,7 @@ dependencies = [
 
 [[package]]
 name = "hs-core"
-version = "0.1.0-alpha.2"
+version = "0.1.0-beta.1"
 dependencies = [
  "osu-format",
  "serde",
@@ -1550,7 +1550,7 @@ dependencies = [
 
 [[package]]
 name = "hs-export"
-version = "0.1.0-alpha.2"
+version = "0.1.0-beta.1"
 dependencies = [
  "hs-audio",
  "hs-core",
@@ -1564,7 +1564,7 @@ dependencies = [
 
 [[package]]
 name = "hs-separate"
-version = "0.1.0-alpha.2"
+version = "0.1.0-beta.1"
 dependencies = [
  "hs-audio",
  "ort",
@@ -1574,7 +1574,7 @@ dependencies = [
 
 [[package]]
 name = "hs-session"
-version = "0.1.0-alpha.2"
+version = "0.1.0-beta.1"
 dependencies = [
  "hs-audio",
  "hs-core",
@@ -2591,7 +2591,7 @@ checksum = "cf211e3776eea6aec988552fa118dd746d70e1b1e5e244058d1c98015f3e5872"
 
 [[package]]
 name = "osu-format"
-version = "0.1.0-alpha.2"
+version = "0.1.0-beta.1"
 dependencies = [
  "serde",
  "thiserror 2.0.21",

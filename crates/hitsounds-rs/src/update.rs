@@ -696,6 +696,19 @@ mod tests {
     }
 
     #[test]
+    fn an_alpha_moves_on_to_the_beta() {
+        let b1 = both("0.1.0-beta.1");
+        let releases = [release("v0.1.0-beta.1", true, &[&b1[0], &b1[1]])];
+        for install in [Install::Installed, Install::Portable] {
+            assert_eq!(
+                pick(&releases, "0.1.0-alpha.2", install).as_deref(),
+                Some("0.1.0-beta.1")
+            );
+        }
+        assert_eq!(pick(&releases, "0.1.0-beta.1", Install::Installed), None);
+    }
+
+    #[test]
     fn a_stable_install_never_gets_a_prerelease() {
         let a = both("0.2.0-alpha.1");
         let releases = [release("v0.2.0-alpha.1", true, &[&a[0], &a[1]])];

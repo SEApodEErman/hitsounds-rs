@@ -29,7 +29,7 @@ body:
     attributes:
       label: hitsounds-rs version
       description: Help > About.
-      placeholder: 0.1.0-alpha.1
+      placeholder: 0.1.0-beta.1
     validations:
       required: true
   - type: dropdown

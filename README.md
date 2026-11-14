@@ -10,7 +10,7 @@ your `.osu` files, with backups.
 
 ![The hitsounds-rs editor: a channel rack with a hit grid for each sample, the song waveform above it and the channel inspector on the right](docs/images/editor.png)
 
-> **Alpha.** hitsounds-rs works end to end on real mapsets, but it is still being
+> **Beta.** hitsounds-rs works end to end on real mapsets, but it is still being
 > tested. Keep backups of mapsets you care about (direct export makes them for you),
 > and [report anything odd](../../issues/new/choose).
 
@@ -20,7 +20,7 @@ your `.osu` files, with backups.
    - `hitsounds-rs-<version>-setup.exe` installs for your user (no admin), or
    - `hitsounds-rs-<version>-portable.zip`: unzip it to any folder you can write to.
 
-   Alpha builds aren't code signed yet, so Windows SmartScreen asks once. Choose
+   Beta builds aren't code signed yet, so Windows SmartScreen asks once. Choose
    **More info** > **Run anyway**.
 2. **Get set up** on the home screen. Pick a skin folder for the default hitsounds;
    your osu! Songs folder is usually found for you.
