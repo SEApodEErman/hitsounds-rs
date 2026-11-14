@@ -6,6 +6,7 @@ use crate::{
     chrome,
     editor::{Act, Panel, Status, Tool, grid::DIVISORS},
     export_view::addition_only_label,
+    keys::{self, Action},
     theme as t,
     widgets::{self, Hint},
     worker::{Job, ProjectView, Snapshot},
@@ -190,6 +191,14 @@ fn caption(
 }
 
 /// One menu row. Closes the menu when chosen.
+/// A hover text with the action's current key, if it has one (D-92).
+fn shortcut_hint(text: &str, action: Action) -> String {
+    match keys::label(action) {
+        "" => text.to_owned(),
+        key => format!("{text} ({key})"),
+    }
+}
+
 fn item(ui: &mut Ui, label: &str, shortcut: &str, enabled: bool) -> bool {
     row(ui, false, label, shortcut, enabled)
 }
@@ -245,13 +254,18 @@ fn menus(ui: &mut Ui, shell: &Shell<'_>, emit: Emit<'_>) {
     let editing = editor.is_some();
 
     menu(ui, "File", |ui| {
-        if item(ui, "New project from mapset…", "Ctrl+N", ok) {
+        if item(
+            ui,
+            "New project from mapset…",
+            keys::label(Action::NewProject),
+            ok,
+        ) {
             emit(Intent::Job(Job::Create));
         }
         if item(ui, "New project from mania hitsound diff…", "", ok) {
             emit(Intent::Job(Job::ImportHitsounds));
         }
-        if item(ui, "Open project…", "Ctrl+O", ok) {
+        if item(ui, "Open project…", keys::label(Action::OpenProject), ok) {
             emit(Intent::Job(Job::Open));
         }
         let recent = shell
@@ -278,10 +292,10 @@ fn menus(ui: &mut Ui, shell: &Shell<'_>, emit: Emit<'_>) {
             },
         );
         ui.separator();
-        if item(ui, "Save project", "Ctrl+S", open) {
+        if item(ui, "Save project", keys::label(Action::Save), open) {
             emit(Intent::Job(Job::Save));
         }
-        if item(ui, "Close project", "Ctrl+W", open) {
+        if item(ui, "Close project", keys::label(Action::CloseProject), open) {
             emit(Intent::Job(Job::Close));
         }
         ui.separator();
@@ -289,7 +303,7 @@ fn menus(ui: &mut Ui, shell: &Shell<'_>, emit: Emit<'_>) {
             if item(ui, "Back to the editor", "Esc", true) {
                 emit(Intent::CloseExport);
             }
-        } else if item(ui, "Export…", "Ctrl+E", editing) {
+        } else if item(ui, "Export…", keys::label(Action::Export), editing) {
             emit(Intent::OpenExport);
         }
         ui.separator();
@@ -299,7 +313,7 @@ fn menus(ui: &mut Ui, shell: &Shell<'_>, emit: Emit<'_>) {
         if item(ui, "Change mapset…", "", open && !shell.exporting) {
             emit(Intent::Job(Job::ChangeMapset));
         }
-        if item(ui, "App settings…", "Ctrl+,", true) {
+        if item(ui, "App settings…", keys::label(Action::Settings), true) {
             emit(Intent::Show(Dialog::Settings));
         }
         ui.separator();
@@ -312,7 +326,7 @@ fn menus(ui: &mut Ui, shell: &Shell<'_>, emit: Emit<'_>) {
         if item(
             ui,
             "Undo",
-            "Ctrl+Z",
+            keys::label(Action::Undo),
             open && project.is_some_and(|p| p.can_undo),
         ) {
             emit(Intent::Job(Job::History { redo: false }));
@@ -320,20 +334,30 @@ fn menus(ui: &mut Ui, shell: &Shell<'_>, emit: Emit<'_>) {
         if item(
             ui,
             "Redo",
-            "Ctrl+Shift+Z",
+            keys::label(Action::Redo),
             open && project.is_some_and(|p| p.can_redo),
         ) {
             emit(Intent::Job(Job::History { redo: true }));
         }
         ui.separator();
         let selected = editor.is_some_and(|status| status.selected > 0);
-        if item(ui, "Select all hits", "Ctrl+A", editing) {
+        if item(
+            ui,
+            "Select all hits",
+            keys::label(Action::SelectAll),
+            editing,
+        ) {
             emit(Intent::Editor(Act::SelectAll));
         }
         if item(ui, "Deselect", "Esc", selected) {
             emit(Intent::Editor(Act::Deselect));
         }
-        if item(ui, "Delete selected hits", "Del", selected) {
+        if item(
+            ui,
+            "Delete selected hits",
+            keys::label(Action::DeleteSelection),
+            selected,
+        ) {
             emit(Intent::Editor(Act::DeleteSelection));
         }
         ui.separator();
@@ -349,7 +373,12 @@ fn menus(ui: &mut Ui, shell: &Shell<'_>, emit: Emit<'_>) {
         }
         ui.separator();
         let channel = editor.and_then(|status| status.channel);
-        if item(ui, "Place hit at the playhead", "Enter", channel.is_some()) {
+        if item(
+            ui,
+            "Place hit at the playhead",
+            keys::label(Action::PlaceHit),
+            channel.is_some(),
+        ) {
             emit(Intent::Editor(Act::PlaceAtPlayhead));
         }
         ui.separator();
@@ -423,16 +452,25 @@ fn menus(ui: &mut Ui, shell: &Shell<'_>, emit: Emit<'_>) {
             submenu(ui, "Interface scale", |ui| {
                 ui.set_min_width(t::MENU_WIDTH - 40.0);
                 let next = t::step_scale(ui.ctx(), scale, true);
-                if item(ui, "Larger", "Ctrl+=", next.is_some()) {
+                if item(ui, "Larger", keys::label(Action::ScaleUp), next.is_some()) {
                     emit(Intent::Job(Job::UiScale(next)));
                 }
                 let next = t::step_scale(ui.ctx(), scale, false);
-                if item(ui, "Smaller", "Ctrl+-", next.is_some()) {
+                if item(
+                    ui,
+                    "Smaller",
+                    keys::label(Action::ScaleDown),
+                    next.is_some(),
+                ) {
                     emit(Intent::Job(Job::UiScale(next)));
                 }
                 ui.separator();
                 for option in t::UI_SCALES {
-                    let shortcut = if option == 1.0 { "Ctrl+0" } else { "" };
+                    let shortcut = if option == 1.0 {
+                        keys::label(Action::ScaleReset)
+                    } else {
+                        ""
+                    };
                     let fits = t::scale_fits(ui.ctx(), option);
                     if check(ui, scale == option, &t::scale_label(option), shortcut, fits) {
                         emit(Intent::Job(Job::UiScale(Some(option))));
@@ -441,7 +479,7 @@ fn menus(ui: &mut Ui, shell: &Shell<'_>, emit: Emit<'_>) {
             });
         });
         ui.separator();
-        if item(ui, "Command palette…", "Ctrl+K", true) {
+        if item(ui, "Command palette…", keys::label(Action::Palette), true) {
             emit(Intent::Show(Dialog::Palette));
         }
     });
@@ -501,14 +539,24 @@ fn menus(ui: &mut Ui, shell: &Shell<'_>, emit: Emit<'_>) {
         });
         ui.separator();
         let reviewing = editing && project.is_some_and(|p| p.layer.file.is_some());
-        if item(ui, "Next issue", "N", reviewing) {
+        if item(ui, "Next issue", keys::label(Action::NextIssue), reviewing) {
             emit(Intent::StepIssue { backwards: false });
         }
-        if item(ui, "Previous issue", "Shift+N", reviewing) {
+        if item(
+            ui,
+            "Previous issue",
+            keys::label(Action::PreviousIssue),
+            reviewing,
+        ) {
             emit(Intent::StepIssue { backwards: true });
         }
         ui.separator();
-        if item(ui, "Go to the start", "Home", editing) {
+        if item(
+            ui,
+            "Go to the start",
+            keys::label(Action::GoToStart),
+            editing,
+        ) {
             emit(Intent::Transport(Transport::Seek { ms: 0.0 }));
         }
         if item(ui, "Refresh from the mapset", "", open) {
@@ -528,10 +576,15 @@ fn menus(ui: &mut Ui, shell: &Shell<'_>, emit: Emit<'_>) {
     });
 
     menu(ui, "Help", |ui| {
-        if item(ui, "Gestures and shortcuts", "F1", true) {
+        if item(
+            ui,
+            "Gestures and shortcuts",
+            keys::label(Action::Help),
+            true,
+        ) {
             emit(Intent::Show(Dialog::Help));
         }
-        if item(ui, "Command palette…", "Ctrl+K", true) {
+        if item(ui, "Command palette…", keys::label(Action::Palette), true) {
             emit(Intent::Show(Dialog::Palette));
         }
         let warnings = shell.state.map_or(0, |state| {
@@ -700,7 +753,7 @@ fn hero(ui: &mut Ui, state: &Snapshot, available: bool, emit: Emit<'_>) {
             }
             if ui
                 .button((t::icon(icons::FOLDER_OPEN), "Open project…"))
-                .on_hover_text("Open project.json (Ctrl+O)")
+                .on_hover_text(shortcut_hint("Open project.json", Action::OpenProject))
                 .clicked()
             {
                 emit(Intent::Job(Job::Open));
@@ -1247,6 +1300,8 @@ fn settings(
     updates: &crate::update::Status,
     emit: Emit<'_>,
 ) {
+    // Read the captured key before any widget sees it (D-92).
+    capture_key(ui, emit);
     widgets::help(
         ui,
         "These settings apply to every project on this computer.",
@@ -1424,7 +1479,7 @@ fn settings(
     widgets::section(ui, "Interface scale", |ui| {
         widgets::help(
             ui,
-            "Makes text and controls larger or smaller, on top of the Windows display scale. Ctrl+= and Ctrl+- step through the sizes; Ctrl+0 resets.",
+            "Makes text and controls larger or smaller, on top of the Windows display scale. The Larger and Smaller interface keys (Ctrl+= and Ctrl+- unless you changed them) step through the sizes.",
         );
         let current = state.settings.ui_scale.unwrap_or(1.0);
         ui.horizontal_wrapped(|ui| {
@@ -1458,6 +1513,205 @@ fn settings(
         }
     });
     updates_section(ui, state, updates, emit);
+    keybinds_section(ui, emit);
+}
+
+/// The action waiting for a new key, with the pass it was last drawn in, so a capture
+/// left open when the dialog closed does not come back with it.
+fn capture_id() -> Id {
+    Id::new("keybind-capture")
+}
+
+fn note_id() -> Id {
+    Id::new("keybind-note")
+}
+
+fn capturing(ui: &Ui) -> Option<Action> {
+    let pass = ui.ctx().cumulative_pass_nr();
+    ui.data(|d| d.get_temp::<(Action, u64)>(capture_id()))
+        .filter(|&(_, seen)| seen + 1 >= pass)
+        .map(|(action, _)| action)
+}
+
+fn stop_capture(ui: &Ui) {
+    ui.data_mut(|d| d.remove::<(Action, u64)>(capture_id()));
+}
+
+/// While a row waits for a key, takes the next key press out of the frame's input and
+/// binds it (D-92). Esc cancels; clipboard keys and other fixed keys are refused with
+/// a note.
+fn capture_key(ui: &mut Ui, emit: Emit<'_>) {
+    let Some(action) = capturing(ui) else {
+        stop_capture(ui);
+        return;
+    };
+    let pass = ui.ctx().cumulative_pass_nr();
+    ui.data_mut(|d| d.insert_temp(capture_id(), (action, pass)));
+    enum Pressed {
+        Key(egui::Key, egui::Modifiers),
+        Clipboard,
+    }
+    let pressed = ui.input_mut(|i| {
+        let mut pressed = None;
+        i.events.retain(|event| match event {
+            egui::Event::Key {
+                key,
+                pressed: true,
+                repeat: false,
+                modifiers,
+                ..
+            } => {
+                pressed.get_or_insert(Pressed::Key(*key, *modifiers));
+                false
+            }
+            egui::Event::Copy | egui::Event::Cut | egui::Event::Paste(_) => {
+                pressed.get_or_insert(Pressed::Clipboard);
+                false
+            }
+            egui::Event::Key { .. } | egui::Event::Text(_) => false,
+            _ => true,
+        });
+        pressed
+    });
+    let binding = match pressed {
+        None => return,
+        Some(Pressed::Key(egui::Key::Escape, modifiers)) if modifiers.is_none() => {
+            stop_capture(ui);
+            return;
+        }
+        Some(Pressed::Key(key, modifiers)) => keys::Binding::from_press(key, modifiers),
+        Some(Pressed::Clipboard) => keys::Binding::ctrl(egui::Key::C),
+    };
+    let note = if let Some(reason) = binding.reserved() {
+        format!("{} can't be used. {reason}", binding.display())
+    } else {
+        let mut map = keys::current();
+        let taken = map.assign(action, binding);
+        stop_capture(ui);
+        emit(Intent::Job(Job::Keybinds(map.overrides())));
+        match taken {
+            Some(other) => format!(
+                "{} moved here from {}, which has no key now.",
+                binding.display(),
+                other.label(),
+            ),
+            None => String::new(),
+        }
+    };
+    ui.data_mut(|d| d.insert_temp(note_id(), note));
+}
+
+/// D-92: every shortcut, rebindable. A key in use elsewhere moves to the new action.
+fn keybinds_section(ui: &mut Ui, emit: Emit<'_>) {
+    let map = keys::current();
+    let waiting = capturing(ui);
+    widgets::section(ui, "Keyboard shortcuts", |ui| {
+        widgets::help(
+            ui,
+            "Click Change and press the new key, with Ctrl, Shift or Alt if you like. A key that another action uses moves to the new one. Esc, Ctrl+C, Ctrl+X and Ctrl+V can't be changed.",
+        );
+        let note: String = ui.data(|d| d.get_temp(note_id())).unwrap_or_default();
+        if !note.is_empty() {
+            ui.label(t::meta(note, t::FALLBACK));
+        }
+        let mut group = "";
+        for action in Action::ALL {
+            if action.group() != group {
+                group = action.group();
+                ui.add_space(t::SMALL);
+                ui.label(t::meta(group, t::DIM));
+            }
+            ui.push_id(action.id(), |ui| {
+                ui.horizontal(|ui| keybind_row(ui, &map, action, waiting, emit));
+            });
+        }
+        if !map.overrides().is_empty() {
+            ui.add_space(t::SMALL);
+            if ui.button("Reset every shortcut").clicked() {
+                ui.data_mut(|d| d.remove::<String>(note_id()));
+                emit(Intent::Job(Job::Keybinds(Default::default())));
+            }
+        }
+    });
+}
+
+const KEYBIND_LABEL_WIDTH: f32 = 196.0;
+
+fn keybind_row(
+    ui: &mut Ui,
+    map: &keys::Keymap,
+    action: Action,
+    waiting: Option<Action>,
+    emit: Emit<'_>,
+) {
+    let bindings = map.get(action);
+    let listening = waiting == Some(action);
+    ui.allocate_ui_with_layout(
+        vec2(KEYBIND_LABEL_WIDTH, t::CONTROL_HEIGHT),
+        Layout::left_to_right(Align::Center),
+        |ui| {
+            ui.set_min_width(KEYBIND_LABEL_WIDTH);
+            ui.add(
+                egui::Label::new(
+                    RichText::new(action.label())
+                        .size(t::BODY_SIZE)
+                        .color(t::MUTED),
+                )
+                .truncate(),
+            );
+        },
+    );
+    if listening {
+        widgets::tag(ui, "Press a key (Esc cancels)", t::ACCENT);
+    } else if bindings.is_empty() {
+        ui.label(t::meta("No key", t::DIM));
+    } else {
+        for (i, binding) in bindings.iter().enumerate() {
+            if i > 0 {
+                ui.label(t::meta("or", t::DIM));
+            }
+            t::keycaps(ui, &binding.display());
+        }
+    }
+    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        let mut changed = None;
+        let response = ui.button(if listening { "Cancel" } else { "Change" });
+        if response.clicked() {
+            // Space or Enter on the focused button would press it again.
+            response.surrender_focus();
+            let pass = ui.ctx().cumulative_pass_nr();
+            ui.data_mut(|d| {
+                d.remove::<String>(note_id());
+                if listening {
+                    d.remove::<(Action, u64)>(capture_id());
+                } else {
+                    d.insert_temp(capture_id(), (action, pass));
+                }
+            });
+        }
+        if !bindings.is_empty() && t::icon_button(ui, icons::X, "Remove the key").clicked() {
+            let mut next = map.clone();
+            next.clear(action);
+            changed = Some(next);
+        }
+        if !map.is_default(action) {
+            let defaults: Vec<_> = action.defaults().iter().map(|b| b.display()).collect();
+            let hint = if defaults.is_empty() {
+                "Back to no key, as it starts".to_owned()
+            } else {
+                format!("Back to the default: {}", defaults.join(" or "))
+            };
+            if t::icon_button(ui, icons::ARROW_COUNTER_CLOCKWISE, &hint).clicked() {
+                let mut next = map.clone();
+                next.reset(action);
+                changed = Some(next);
+            }
+        }
+        if let Some(next) = changed {
+            ui.data_mut(|d| d.remove::<String>(note_id()));
+            emit(Intent::Job(Job::Keybinds(next.overrides())));
+        }
+    });
 }
 
 /// D-84: the startup check, its status, and the downloaded update.
@@ -1508,103 +1762,135 @@ const RESTART_HINT: &str =
     "Close hitsounds-rs (asking to save first), install the update and open it again";
 
 fn help(ui: &mut Ui) {
+    // D-92: keys come from the keymap, so the sheet shows the user's own bindings.
+    let k = |action| keys::label(action).to_owned();
+    let both = |a: Action, b: Action| {
+        let (a, b) = (keys::label(a), keys::label(b));
+        match (a.is_empty(), b.is_empty()) {
+            (false, false) => format!("{a} / {b}"),
+            _ => format!("{a}{b}"),
+        }
+    };
+    let text = |s: &str| s.to_owned();
     for (group, shortcuts) in [
         (
             "Placing hits",
-            &[
-                ("Place a hit", "Click a step"),
-                ("Delete a hit", "Right-click it"),
-                ("Move hits", "Drag, across time or channels"),
-                ("Select hits", "Drag a box"),
-                ("Add to the selection", "Ctrl+click"),
-                ("Place at the playhead", "Enter"),
-                ("Delete the selection", "Delete"),
-                ("Select all / clear selection", "Ctrl+A / Esc"),
-                ("Copy / cut the selection", "Ctrl+C / Ctrl+X"),
-                ("Paste at the playhead", "Ctrl+V"),
-            ][..],
+            vec![
+                ("Place a hit", text("Click a step")),
+                ("Delete a hit", text("Right-click it")),
+                ("Move hits", text("Drag, across time or channels")),
+                ("Select hits", text("Drag a box")),
+                ("Add to the selection", text("Ctrl+click")),
+                ("Place at the playhead", k(Action::PlaceHit)),
+                ("Delete the selection", k(Action::DeleteSelection)),
+                ("Select all", k(Action::SelectAll)),
+                ("Clear the selection", text("Esc")),
+                ("Copy / cut the selection", text("Ctrl+C / Ctrl+X")),
+                ("Paste at the playhead", text("Ctrl+V")),
+            ],
         ),
         (
             "Tools",
-            &[
-                ("Select: box select only", "1"),
-                ("Draw: place and move", "2"),
-                ("Paint: drag to fill every snap step", "3"),
-                ("Delete: click or drag over hits", "4"),
+            vec![
+                ("Select: box select only", k(Action::ToolSelect)),
+                ("Draw: place and move", k(Action::ToolDraw)),
+                ("Paint: drag to fill every snap step", k(Action::ToolPaint)),
+                ("Delete: click or drag over hits", k(Action::ToolDelete)),
             ],
         ),
         (
             "Listening",
-            &[
-                ("Play / pause", "Space"),
-                ("Go to the start", "Home"),
-                ("Song or drum stem", "T"),
-                ("Seek", "Click the ruler or waveform"),
-                ("Step by snap / four steps", "Wheel / Shift+wheel"),
-                ("Zoom at the pointer", "Alt+wheel"),
-                ("Change the snap divisor", "Ctrl+wheel"),
+            vec![
+                ("Play / pause", k(Action::PlayPause)),
+                ("Go to the start", k(Action::GoToStart)),
+                ("Song or drum stem", k(Action::ToggleMonitor)),
+                ("Seek", text("Click the ruler or waveform")),
+                ("Step by snap / four steps", text("Wheel / Shift+wheel")),
+                ("Zoom at the pointer", text("Alt+wheel")),
+                ("Change the snap divisor", text("Ctrl+wheel")),
             ],
         ),
         (
             "Channels",
-            &[
-                ("Mute / solo", "Click / right-click the light"),
-                ("Volume", "Drag the knob"),
-                ("Rename", "Double-click the name"),
-                ("Change priority", "Drag the row handle"),
-                ("Channel menu", "Right-click the name"),
-                ("Scroll channels", "Wheel over the rack"),
+            vec![
+                ("Mute / solo", text("Click / right-click the light")),
+                ("Volume", text("Drag the knob")),
+                ("Rename", text("Double-click the name")),
+                ("Change priority", text("Drag the row handle")),
+                ("Channel menu", text("Right-click the name")),
+                ("Scroll channels", text("Wheel over the rack")),
             ],
         ),
         (
             "Hit volume",
-            &[
-                ("Add a point", "Ctrl+click"),
-                ("Move a point", "Drag it"),
-                ("Switch ramp and step", "Click a point"),
-                ("Delete a point", "Right-click it"),
+            vec![
+                ("Add a point", text("Ctrl+click")),
+                ("Move a point", text("Drag it")),
+                ("Switch ramp and step", text("Click a point")),
+                ("Delete a point", text("Right-click it")),
             ],
         ),
         (
             "Difficulties",
-            &[
-                ("Next / previous issue", "N / Shift+N"),
-                ("Add a hit on an object", "Right-click the Objects lane"),
-                ("Mute or replace a channel", "Right-click its name"),
+            vec![
+                (
+                    "Next / previous issue",
+                    both(Action::NextIssue, Action::PreviousIssue),
+                ),
+                (
+                    "Add a hit on an object",
+                    text("Right-click the Objects lane"),
+                ),
+                ("Mute or replace a channel", text("Right-click its name")),
             ],
         ),
         (
             "Panels and files",
-            &[
-                ("Channel settings", "F6"),
-                ("Difficulty review", "F7"),
-                ("Browser", "F8"),
-                ("Mixer", "F9"),
-                ("Export", "Ctrl+E"),
-                ("Command palette", "Ctrl+K"),
-                ("New / open project", "Ctrl+N / Ctrl+O"),
-                ("Save / close project", "Ctrl+S / Ctrl+W"),
-                ("Undo / redo", "Ctrl+Z / Ctrl+Shift+Z"),
-                ("App settings", "Ctrl+,"),
-                ("Interface scale larger / smaller", "Ctrl+= / Ctrl+-"),
-                ("Interface scale 100%", "Ctrl+0"),
-                ("This sheet", "F1"),
+            vec![
+                ("Channel settings", k(Action::PanelChannel)),
+                ("Difficulty review", k(Action::PanelReview)),
+                ("Browser", k(Action::PanelBrowser)),
+                ("Mixer", k(Action::PanelMixer)),
+                ("Export", k(Action::Export)),
+                ("Command palette", k(Action::Palette)),
+                (
+                    "New / open project",
+                    both(Action::NewProject, Action::OpenProject),
+                ),
+                (
+                    "Save / close project",
+                    both(Action::Save, Action::CloseProject),
+                ),
+                ("Undo / redo", both(Action::Undo, Action::Redo)),
+                ("App settings", k(Action::Settings)),
+                (
+                    "Interface scale larger / smaller",
+                    both(Action::ScaleUp, Action::ScaleDown),
+                ),
+                ("Interface scale 100%", k(Action::ScaleReset)),
+                ("This sheet", k(Action::Help)),
             ],
         ),
     ] {
         ui.label(t::display(group, t::TITLE_SIZE));
-        for &(action, shortcut) in shortcuts {
+        for (action, shortcut) in shortcuts {
             ui.columns(2, |columns| {
                 columns[0].add(egui::Label::new(t::muted(action)).wrap());
-                if shortcut.contains(' ') {
+                if shortcut.is_empty() {
+                    columns[1].label(t::meta("No key", t::DIM));
+                } else if shortcut.contains(' ') {
                     columns[1].add(egui::Label::new(t::meta(shortcut, t::MUTED)).wrap());
                 } else {
-                    t::keycaps(&mut columns[1], shortcut);
+                    t::keycaps(&mut columns[1], &shortcut);
                 }
             });
         }
         ui.add_space(t::SPACE);
     }
+    widgets::help(
+        ui,
+        "Change any key in App settings, under Keyboard shortcuts.",
+    );
 }
 
 fn about(ui: &mut Ui, logo: &TextureHandle, encore: bool) {

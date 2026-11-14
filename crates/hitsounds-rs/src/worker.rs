@@ -71,6 +71,8 @@ pub enum Job {
     UpdateChecks(bool),
     /// Keep the song's pitch when slowed (D-90).
     KeepPitch(bool),
+    /// Save the changed keyboard shortcuts (D-92).
+    Keybinds(std::collections::BTreeMap<String, Vec<String>>),
     UiScale(Option<f32>),
     /// Save and apply the listening levels (D-77).
     Levels(Levels),
@@ -121,6 +123,7 @@ impl Job {
             | Self::ReduceMotion(_)
             | Self::UpdateChecks(_)
             | Self::KeepPitch(_)
+            | Self::Keybinds(_)
             | Self::UiScale(_)
             | Self::Levels(_) => "Saving settings",
             Self::ImportStem | Self::RemoveStem | Self::ApplySeparation(_) => "Updating drum stem",
@@ -149,6 +152,7 @@ impl Job {
             Self::ReduceMotion(_)
                 | Self::UpdateChecks(_)
                 | Self::KeepPitch(_)
+                | Self::Keybinds(_)
                 | Self::UiScale(_)
                 | Self::Levels(_)
                 | Self::ForgetRecent(_)
@@ -871,6 +875,10 @@ impl State {
                     session.set_keep_pitch(on)?;
                 }
                 self.change_settings(|settings| settings.set_keep_pitch(on))?;
+                return Ok(None);
+            }
+            Job::Keybinds(keybinds) => {
+                self.change_settings(|settings| settings.set_keybinds(keybinds))?;
                 return Ok(None);
             }
             Job::UiScale(value) => {

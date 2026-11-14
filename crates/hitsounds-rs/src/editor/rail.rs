@@ -8,6 +8,7 @@ use super::{
 };
 use crate::{
     app::Intent,
+    keys::{self, Action},
     theme as t,
     views::Emit,
     widgets::{self, Hint, Segment},
@@ -315,7 +316,7 @@ impl Rail {
                                 icon: "",
                                 label: "Song",
                                 hint: "Play the full song behind the hitsounds",
-                                shortcut: "T",
+                                shortcut: keys::label(Action::ToggleMonitor),
                                 enabled: true,
                             },
                             Segment {
@@ -327,7 +328,7 @@ impl Rail {
                                 } else {
                                     "No drum stem yet. Separate or import one in File, Project settings"
                                 },
-                                shortcut: "T",
+                                shortcut: keys::label(Action::ToggleMonitor),
                                 enabled: view.stem_ready,
                             },
                         ],
@@ -968,7 +969,7 @@ fn channel_menu(
     ui.set_min_width(t::MENU_WIDTH - 40.0);
     ui.spacing_mut().item_spacing.y = 0.0;
     if ui
-        .add(Button::new("Channel settings").shortcut_text("F6"))
+        .add(Button::new("Channel settings").shortcut_text(Panel::Channel.shortcut()))
         .clicked()
     {
         emit(Intent::Editor(Act::Show(Panel::Channel)));

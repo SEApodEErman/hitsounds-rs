@@ -6,6 +6,7 @@
 use crate::{
     app::{Dialog, Intent},
     editor::{Act, Panel, Tool},
+    keys::{self, Action},
     theme as t,
     views::Emit,
     worker::{Job, ProjectView},
@@ -70,13 +71,13 @@ pub fn commands(cx: &Offer<'_>) -> Vec<Command> {
     let dialogs = |list: &mut Vec<Command>| {
         list.push(Command::new(
             "App settings",
-            "Ctrl+,",
+            keys::label(Action::Settings),
             icons::GEAR,
             Intent::Show(Dialog::Settings),
         ));
         list.push(Command::new(
             "Gestures and shortcuts",
-            "F1",
+            keys::label(Action::Help),
             icons::QUESTION,
             Intent::Show(Dialog::Help),
         ));
@@ -92,7 +93,7 @@ pub fn commands(cx: &Offer<'_>) -> Vec<Command> {
         if let Some(scale) = cx.larger {
             list.push(Command::new(
                 format!("Interface scale: larger ({})", t::scale_label(scale)),
-                "Ctrl+=",
+                keys::label(Action::ScaleUp),
                 icons::MAGNIFYING_GLASS_PLUS,
                 Intent::Job(Job::UiScale(Some(scale))),
             ));
@@ -100,14 +101,14 @@ pub fn commands(cx: &Offer<'_>) -> Vec<Command> {
         if let Some(scale) = cx.smaller {
             list.push(Command::new(
                 format!("Interface scale: smaller ({})", t::scale_label(scale)),
-                "Ctrl+-",
+                keys::label(Action::ScaleDown),
                 icons::MAGNIFYING_GLASS_MINUS,
                 Intent::Job(Job::UiScale(Some(scale))),
             ));
         }
         list.push(Command::new(
             "Interface scale: 100%",
-            "Ctrl+0",
+            keys::label(Action::ScaleReset),
             icons::MAGNIFYING_GLASS,
             Intent::Job(Job::UiScale(None)),
         ));
@@ -119,13 +120,13 @@ pub fn commands(cx: &Offer<'_>) -> Vec<Command> {
     let Some(project) = cx.project else {
         list.push(Command::new(
             "New project from mapset",
-            "Ctrl+N",
+            keys::label(Action::NewProject),
             icons::FILE_PLUS,
             Intent::Job(Job::Create),
         ));
         list.push(Command::new(
             "Open project",
-            "Ctrl+O",
+            keys::label(Action::OpenProject),
             icons::FOLDER_OPEN,
             Intent::Job(Job::Open),
         ));
@@ -161,7 +162,7 @@ pub fn commands(cx: &Offer<'_>) -> Vec<Command> {
         ));
         list.push(Command::new(
             "Save project",
-            "Ctrl+S",
+            keys::label(Action::Save),
             icons::FLOPPY_DISK,
             Intent::Job(Job::Save),
         ));
@@ -172,7 +173,7 @@ pub fn commands(cx: &Offer<'_>) -> Vec<Command> {
     let layer = project.layer.file.as_deref();
     list.push(Command::new(
         if cx.playing { "Pause" } else { "Play" },
-        "Space",
+        keys::label(Action::PlayPause),
         if cx.playing {
             icons::PAUSE
         } else {
@@ -182,7 +183,7 @@ pub fn commands(cx: &Offer<'_>) -> Vec<Command> {
     ));
     list.push(Command::new(
         "Go to start",
-        "Home",
+        keys::label(Action::GoToStart),
         icons::SKIP_BACK,
         Intent::Transport(Transport::Seek { ms: 0.0 }),
     ));
@@ -220,7 +221,7 @@ pub fn commands(cx: &Offer<'_>) -> Vec<Command> {
         };
         list.push(Command::new(
             label,
-            "T",
+            keys::label(Action::ToggleMonitor),
             icons::WAVEFORM,
             Intent::Job(Job::Monitor(to)),
         ));
@@ -228,13 +229,13 @@ pub fn commands(cx: &Offer<'_>) -> Vec<Command> {
     if layer.is_some() {
         list.push(Command::new(
             "Next issue",
-            "N",
+            keys::label(Action::NextIssue),
             icons::ARROW_DOWN,
             Intent::StepIssue { backwards: false },
         ));
         list.push(Command::new(
             "Previous issue",
-            "Shift+N",
+            keys::label(Action::PreviousIssue),
             icons::ARROW_UP,
             Intent::StepIssue { backwards: true },
         ));
@@ -272,20 +273,20 @@ pub fn commands(cx: &Offer<'_>) -> Vec<Command> {
     ));
     list.push(Command::new(
         "Review and export",
-        "Ctrl+E",
+        keys::label(Action::Export),
         icons::EXPORT,
         Intent::OpenExport,
     ));
     list.push(Command::new(
         "Save project",
-        "Ctrl+S",
+        keys::label(Action::Save),
         icons::FLOPPY_DISK,
         Intent::Job(Job::Save),
     ));
     if project.can_undo {
         list.push(Command::new(
             "Undo",
-            "Ctrl+Z",
+            keys::label(Action::Undo),
             icons::ARROW_COUNTER_CLOCKWISE,
             Intent::Job(Job::History { redo: false }),
         ));
@@ -293,7 +294,7 @@ pub fn commands(cx: &Offer<'_>) -> Vec<Command> {
     if project.can_redo {
         list.push(Command::new(
             "Redo",
-            "Ctrl+Shift+Z",
+            keys::label(Action::Redo),
             icons::ARROW_CLOCKWISE,
             Intent::Job(Job::History { redo: true }),
         ));
@@ -392,13 +393,13 @@ pub fn commands(cx: &Offer<'_>) -> Vec<Command> {
     }
     list.push(Command::new(
         "Close project",
-        "Ctrl+W",
+        keys::label(Action::CloseProject),
         icons::X,
         Intent::Job(Job::Close),
     ));
     list.push(Command::new(
         "New project from mapset",
-        "Ctrl+N",
+        keys::label(Action::NewProject),
         icons::FILE_PLUS,
         Intent::Job(Job::Create),
     ));
@@ -410,7 +411,7 @@ pub fn commands(cx: &Offer<'_>) -> Vec<Command> {
     ));
     list.push(Command::new(
         "Open project",
-        "Ctrl+O",
+        keys::label(Action::OpenProject),
         icons::FOLDER_OPEN,
         Intent::Job(Job::Open),
     ));

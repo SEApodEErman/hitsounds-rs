@@ -2,10 +2,11 @@
 //! (D-40), the recent-projects list (D-41), the sample library folders (D-45) and the
 //! drums model for separation (D-71), the listening levels (D-77), and the osu!
 //! Songs folder and projects folder (D-82), whether to check for updates (D-84), and
-//! whether slowed playback keeps the song's pitch (D-90). Nothing here belongs to a
-//! project.
+//! whether slowed playback keeps the song's pitch (D-90), and the user's keyboard
+//! shortcuts (D-92). Nothing here belongs to a project.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -102,6 +103,11 @@ pub struct AppSettings {
     /// Keep the song's pitch below 1x speed (D-90). None = on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keep_pitch: Option<bool>,
+    /// Changed keyboard shortcuts (D-92): action id to bindings such as `Ctrl+S`. Only
+    /// actions that differ from the defaults are stored; an empty list means unbound.
+    /// The app parses them, so this crate stays free of GUI types.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub keybinds: BTreeMap<String, Vec<String>>,
 }
 
 impl AppSettings {
@@ -197,6 +203,15 @@ impl Settings {
 
     pub fn set_keep_pitch(&mut self, on: bool) -> Result<(), String> {
         self.value.keep_pitch = (!on).then_some(false);
+        self.save()
+    }
+
+    /// Replaces the changed shortcuts (D-92). An empty map is every default key.
+    pub fn set_keybinds(&mut self, keybinds: BTreeMap<String, Vec<String>>) -> Result<(), String> {
+        if self.value.keybinds == keybinds {
+            return Ok(());
+        }
+        self.value.keybinds = keybinds;
         self.save()
     }
 

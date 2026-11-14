@@ -4,6 +4,7 @@ use crate::{
     chrome,
     editor::{Act, Editor, Panel, Tool},
     export_view::ExportPage,
+    keys::{self, Action},
     mapsets::{self, Picker, Purpose, Songs},
     palette::{Offer, Palette},
     theme as t, update, views,
@@ -733,12 +734,15 @@ impl Studio {
         let scale = self.ui_scale();
         let larger = t::step_scale(ctx, scale, true);
         let smaller = t::step_scale(ctx, scale, false);
+        let map = keys::current();
+        let pressed = |i: &mut egui::InputState, action| map.pressed(i, action);
         ctx.input_mut(|i| {
-            if i.consume_key(Modifiers::NONE, Key::F1)
-                || i.events
+            // `?` stays a fixed second key for the gesture sheet unless a binding uses it.
+            let question = !map.uses(Key::Questionmark)
+                && i.events
                     .iter()
-                    .any(|event| matches!(event, Event::Text(text) if text == "?"))
-            {
+                    .any(|event| matches!(event, Event::Text(text) if text == "?"));
+            if pressed(i, Action::Help) || question {
                 return Some(Intent::Show(Dialog::Help));
             }
             let ctrl_shift_alt = Modifiers::CTRL | Modifiers::SHIFT | Modifiers::ALT;
@@ -746,22 +750,20 @@ impl Studio {
                 // D-56: the encore is a visual detail in About and never edits the project.
                 return Some(Intent::Show(Dialog::Encore));
             }
-            if i.consume_key(Modifiers::CTRL, Key::K) {
+            if pressed(i, Action::Palette) {
                 return Some(Intent::Show(Dialog::Palette));
             }
-            if i.consume_key(Modifiers::CTRL, Key::Comma) {
+            if pressed(i, Action::Settings) {
                 return Some(Intent::Show(Dialog::Settings));
             }
             // D-68: browser-style interface scale keys, saved as an app setting.
-            if i.consume_key(Modifiers::CTRL, Key::Equals)
-                || i.consume_key(Modifiers::CTRL, Key::Plus)
-            {
+            if pressed(i, Action::ScaleUp) {
                 return larger.map(|s| Intent::Job(Job::UiScale(Some(s))));
             }
-            if i.consume_key(Modifiers::CTRL, Key::Minus) {
+            if pressed(i, Action::ScaleDown) {
                 return smaller.map(|s| Intent::Job(Job::UiScale(Some(s))));
             }
-            if i.consume_key(Modifiers::CTRL, Key::Num0) && scale != 1.0 {
+            if pressed(i, Action::ScaleReset) && scale != 1.0 {
                 return Some(Intent::Job(Job::UiScale(None)));
             }
             if self.export.is_some() {
@@ -772,88 +774,59 @@ impl Studio {
             if !self.ready() {
                 return None;
             }
-            if i.consume_key(Modifiers::CTRL, Key::N) {
+            if pressed(i, Action::NewProject) {
                 return Some(Intent::Job(Job::Create));
             }
-            if i.consume_key(Modifiers::CTRL, Key::O) {
+            if pressed(i, Action::OpenProject) {
                 return Some(Intent::Job(Job::Open));
             }
             let project = self.active()?;
-            if i.consume_key(Modifiers::CTRL, Key::E) {
+            if pressed(i, Action::Export) {
                 return Some(Intent::OpenExport);
             }
-            // D-61: FL Studio's function keys for the docks; D-86: number keys for the tools.
-            for (key, panel) in [
-                (Key::F6, Panel::Channel),
-                (Key::F7, Panel::Review),
-                (Key::F8, Panel::Browser),
-                (Key::F9, Panel::Mixer),
-            ] {
-                if i.consume_key(Modifiers::NONE, key) {
+            for panel in Panel::ALL {
+                if pressed(i, panel.action()) {
                     return Some(Intent::Editor(Act::Toggle(panel)));
                 }
             }
             for tool in Tool::ALL {
-                if i.consume_key(Modifiers::NONE, tool.key()) {
+                if pressed(i, tool.action()) {
                     return Some(Intent::Editor(Act::Tool(tool)));
                 }
             }
-            if project.layer.file.is_some()
-                && !i.modifiers.alt
-                && !i.modifiers.ctrl
-                && !i.modifiers.command
-            {
-                let backwards = i.modifiers.shift;
-                let modifiers = if backwards {
-                    Modifiers::SHIFT
-                } else {
-                    Modifiers::NONE
-                };
-                if i.consume_key(modifiers, Key::N) {
-                    return Some(Intent::StepIssue { backwards });
+            if project.layer.file.is_some() {
+                if pressed(i, Action::NextIssue) {
+                    return Some(Intent::StepIssue { backwards: false });
+                }
+                if pressed(i, Action::PreviousIssue) {
+                    return Some(Intent::StepIssue { backwards: true });
                 }
             }
-            if i.consume_key(Modifiers::CTRL, Key::S) {
+            if pressed(i, Action::Save) {
                 return Some(Intent::Job(Job::Save));
             }
-            if i.consume_key(Modifiers::CTRL, Key::W) {
+            if pressed(i, Action::CloseProject) {
                 return Some(Intent::Job(Job::Close));
             }
-            if project.can_redo && i.consume_key(Modifiers::CTRL | Modifiers::SHIFT, Key::Z) {
+            if project.can_redo && pressed(i, Action::Redo) {
                 return Some(Intent::Job(Job::History { redo: true }));
             }
-            if project.can_redo && i.consume_key(Modifiers::CTRL, Key::Y) {
-                return Some(Intent::Job(Job::History { redo: true }));
-            }
-            if project.can_undo && i.consume_key(Modifiers::CTRL, Key::Z) {
+            if project.can_undo && pressed(i, Action::Undo) {
                 return Some(Intent::Job(Job::History { redo: false }));
             }
-            if i.consume_key(Modifiers::NONE, Key::Home) {
+            if pressed(i, Action::GoToStart) {
                 return Some(Intent::Transport(Transport::Seek { ms: 0.0 }));
             }
-            if project.stem_ready && i.consume_key(Modifiers::NONE, Key::T) {
+            if project.stem_ready && pressed(i, Action::ToggleMonitor) {
                 let source = match project.project.audio.monitor {
                     Monitor::Original => Monitor::Stems,
                     Monitor::Stems => Monitor::Original,
                 };
                 return Some(Intent::Job(Job::Monitor(source)));
             }
-            let space_pressed = i.modifiers.is_none()
-                && i.events.iter().any(|event| {
-                    matches!(
-                        event,
-                        Event::Key {
-                            key: Key::Space,
-                            pressed: true,
-                            repeat: false,
-                            ..
-                        }
-                    )
-                });
-            if i.modifiers.is_none() {
-                i.consume_key(Modifiers::NONE, Key::Space);
-            }
-            if alt_space || space_pressed {
+            // D-46: Alt+Space plays and pauses while Space does.
+            let alt_space = alt_space && map.has_plain(Action::PlayPause, Key::Space);
+            if pressed(i, Action::PlayPause) || alt_space {
                 return Some(Intent::TogglePlayback);
             }
             None
@@ -946,6 +919,9 @@ impl eframe::App for Studio {
         self.poll(ctx, now);
         self.poll_separation(now);
         self.songs.poll(ctx);
+        if let Some(state) = &self.state {
+            keys::install(&state.settings.keybinds);
+        }
         self.watch_updates(ctx, now);
         if self.exit_when_ready && self.busy.is_none() {
             self.exit_when_ready = false;

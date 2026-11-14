@@ -122,7 +122,9 @@ own (`hs_session::separation::Separation`, D-72): the worker builds the request,
 shell polls its stage for the progress card, and the finished stem goes back through the
 worker as one undo step. `onnxruntime.dll` ships next to the exe (D-74). egui renders the latest workspace
 view and reads the playback clock with `try_lock`. A watcher requests repaint and
-the shell debounces refreshes.
+the shell debounces refreshes. Keyboard shortcuts go through `keys.rs` (D-92): the
+shell installs the keymap from `AppSettings::keybinds` each frame, and every shortcut
+check, menu label and tooltip reads it.
 
 - The timeline is custom-drawn with egui's painter; hit-testing is done by hand.
 - File watching (M5) uses the `notify` crate on the mapset folder, debounced. osu!

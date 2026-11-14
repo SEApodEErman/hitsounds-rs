@@ -7,6 +7,7 @@ use super::{
 };
 use crate::{
     app::Intent,
+    keys::{self, Action},
     theme as t,
     views::Emit,
     widgets::{self, Hint},
@@ -60,23 +61,18 @@ impl Tool {
         }
     }
 
-    pub fn shortcut(self) -> &'static str {
+    /// The shortcut that picks the tool (D-86 defaults, rebindable by D-92).
+    pub fn action(self) -> Action {
         match self {
-            Self::Select => "1",
-            Self::Draw => "2",
-            Self::Paint => "3",
-            Self::Delete => "4",
+            Self::Select => Action::ToolSelect,
+            Self::Draw => Action::ToolDraw,
+            Self::Paint => Action::ToolPaint,
+            Self::Delete => Action::ToolDelete,
         }
     }
 
-    /// The key that picks the tool (D-86).
-    pub fn key(self) -> Key {
-        match self {
-            Self::Select => Key::Num1,
-            Self::Draw => Key::Num2,
-            Self::Paint => Key::Num3,
-            Self::Delete => Key::Num4,
-        }
+    pub fn shortcut(self) -> &'static str {
+        keys::label(self.action())
     }
 
     pub fn summary(self) -> &'static str {
@@ -500,22 +496,21 @@ impl Timeline {
         let focused = ctx.memory(|memory| memory.has_focus(surface_id()));
         let pressed = ctx.input_mut(|input| {
             if input.consume_key(Modifiers::NONE, Key::Escape) {
-                Some(Key::Escape)
-            } else if !focused {
-                None
-            } else if input.consume_key(Modifiers::CTRL, Key::A) {
-                Some(Key::A)
-            } else {
-                [Key::Enter, Key::Delete]
-                    .into_iter()
-                    .find(|&key| input.consume_key(Modifiers::NONE, key))
+                return Some(None);
             }
+            if !focused {
+                return None;
+            }
+            [Action::SelectAll, Action::DeleteSelection, Action::PlaceHit]
+                .into_iter()
+                .find(|&action| keys::pressed(input, action))
+                .map(Some)
         });
         match pressed {
-            Some(Key::Escape) => self.reset_layer(),
-            Some(Key::A) => self.select_all(view),
-            Some(Key::Delete) => self.delete_selection(view, emit),
-            Some(Key::Enter) => self.place_at_playhead(view, clock, emit),
+            Some(None) => self.reset_layer(),
+            Some(Some(Action::SelectAll)) => self.select_all(view),
+            Some(Some(Action::DeleteSelection)) => self.delete_selection(view, emit),
+            Some(Some(Action::PlaceHit)) => self.place_at_playhead(view, clock, emit),
             _ => {}
         }
     }

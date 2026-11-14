@@ -11,6 +11,8 @@ mod editor;
 #[cfg(windows)]
 mod export_view;
 #[cfg(windows)]
+mod keys;
+#[cfg(windows)]
 mod mapsets;
 #[cfg(windows)]
 mod palette;

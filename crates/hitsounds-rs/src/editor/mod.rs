@@ -15,6 +15,7 @@ mod tests;
 
 use crate::{
     app::Intent,
+    keys::{self, Action},
     theme as t,
     views::Emit,
     widgets::{self, Hint, Segment},
@@ -61,13 +62,18 @@ impl Panel {
         }
     }
 
-    pub fn shortcut(self) -> &'static str {
+    /// The shortcut that shows or hides it (D-61 defaults, rebindable by D-92).
+    pub fn action(self) -> Action {
         match self {
-            Self::Channel => "F6",
-            Self::Review => "F7",
-            Self::Browser => "F8",
-            Self::Mixer => "F9",
+            Self::Channel => Action::PanelChannel,
+            Self::Review => Action::PanelReview,
+            Self::Browser => Action::PanelBrowser,
+            Self::Mixer => Action::PanelMixer,
         }
+    }
+
+    pub fn shortcut(self) -> &'static str {
+        keys::label(self.action())
     }
 
     pub fn icon(self) -> &'static str {
@@ -488,14 +494,14 @@ impl Editor {
                             view.can_undo,
                             icons::ARROW_U_UP_LEFT,
                             "Undo",
-                            "Ctrl+Z",
+                            keys::label(Action::Undo),
                         ),
                         (
                             true,
                             view.can_redo,
                             icons::ARROW_U_UP_RIGHT,
                             "Redo",
-                            "Ctrl+Shift+Z",
+                            keys::label(Action::Redo),
                         ),
                     ] {
                         let response = ui
@@ -517,7 +523,7 @@ impl Editor {
                         if widgets::describe(
                             export,
                             "Review what will be written to the mapset, then export",
-                            "Ctrl+E",
+                            keys::label(Action::Export),
                         )
                         .clicked()
                         {
@@ -583,11 +589,17 @@ fn transport(ui: &mut Ui, view: &ProjectView, clock: &Clock, ready: bool, emit: 
         play.widget_info(|| {
             egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label)
         });
-        if widgets::describe(play, label, "Space").clicked() {
+        if widgets::describe(play, label, keys::label(Action::PlayPause)).clicked() {
             emit(Intent::TogglePlayback);
         }
         let stop = widgets::tool_button(ui, icons::STOP, "Stop", false, None);
-        if widgets::describe(stop, "Stop and return to the start", "Home").clicked() {
+        if widgets::describe(
+            stop,
+            "Stop and return to the start",
+            keys::label(Action::GoToStart),
+        )
+        .clicked()
+        {
             if clock.playing {
                 emit(Intent::TogglePlayback);
             }
@@ -664,7 +676,7 @@ fn layer_strip(ctx: &Context, view: &ProjectView, ready: bool, emit: Emit<'_>) {
                                 (
                                     icons::CARET_UP,
                                     "Jump to the previous issue",
-                                    "Shift+N",
+                                    keys::label(Action::PreviousIssue),
                                     true,
                                 ),
                             ] {

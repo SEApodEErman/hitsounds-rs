@@ -4,6 +4,7 @@
 //! and a control on the right, grouped under plain section titles.
 
 use super::{
+    Panel,
     canvas::{Timeline, edit, seek},
     grid::timecode,
     model::{Issue, IssueKind},
@@ -12,6 +13,7 @@ use super::{
 };
 use crate::{
     app::Intent,
+    keys::{self, Action},
     theme as t,
     views::Emit,
     widgets::{self, Segment},
@@ -67,7 +69,7 @@ impl Inspector {
                         icon: icons::SLIDERS_HORIZONTAL,
                         label: "Channel",
                         hint: "Channel settings: sample, osu! hitsound, volume and colour",
-                        shortcut: "F6",
+                        shortcut: Panel::Channel.shortcut(),
                         enabled: true,
                     },
                     Segment {
@@ -75,7 +77,7 @@ impl Inspector {
                         icon: icons::LIST_CHECKS,
                         label: "Difficulty",
                         hint: "Difficulty review: issues, rules and changes for one difficulty",
-                        shortcut: "F7",
+                        shortcut: Panel::Review.shortcut(),
                         enabled: true,
                     },
                 ],
@@ -242,8 +244,18 @@ impl Inspector {
             );
             ui.horizontal(|ui| {
                 for (glyph, label, shortcut, backwards) in [
-                    (icons::ARROW_UP, "Previous", "Shift+N", true),
-                    (icons::ARROW_DOWN, "Next", "N", false),
+                    (
+                        icons::ARROW_UP,
+                        "Previous",
+                        keys::label(Action::PreviousIssue),
+                        true,
+                    ),
+                    (
+                        icons::ARROW_DOWN,
+                        "Next",
+                        keys::label(Action::NextIssue),
+                        false,
+                    ),
                 ] {
                     let response =
                         ui.add_enabled(ready, Button::new((t::icon(glyph).size(13.0), label)));
