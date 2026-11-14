@@ -28,12 +28,15 @@ if (-not $Version) {
 }
 $Numeric = ($Version -split '[-+]')[0]
 
+# Package the fetched runtime directly (D-74, D-85), even if Cargo reused a build
+# whose runtime copies are missing from the profile folder.
+$RuntimeDir = Join-Path $Root 'crates\hitsounds-rs\runtime'
 $Files = @(
     (Join-Path $SourceDir 'hitsounds-rs.exe'),
     (Join-Path $SourceDir 'hitsounds_rs.pdb'),
-    (Join-Path $SourceDir 'onnxruntime.dll'),
-    (Join-Path $SourceDir 'onnxruntime-LICENSE.txt'),
-    (Join-Path $SourceDir 'onnxruntime-ThirdPartyNotices.txt'),
+    (Join-Path $RuntimeDir 'onnxruntime.dll'),
+    (Join-Path $RuntimeDir 'onnxruntime-LICENSE.txt'),
+    (Join-Path $RuntimeDir 'onnxruntime-ThirdPartyNotices.txt'),
     (Join-Path $Root 'THIRD_PARTY_NOTICES.md')
 )
 foreach ($file in $Files) {
@@ -50,7 +53,6 @@ Copy-Item $Files $Stage
 Copy-Item (Join-Path $Root 'LICENSE') (Join-Path $Stage 'LICENSE.txt')
 $Portable = Join-Path $OutputDir "hitsounds-rs-$Version-portable.zip"
 Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath $Portable -CompressionLevel Optimal
-Remove-Item -Recurse -Force $Stage
 Write-Host "Portable: $Portable"
 
 if (-not $SkipInstaller) {
@@ -61,9 +63,11 @@ if (-not $SkipInstaller) {
         "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
     ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
     if (-not $Iscc) { throw 'Inno Setup 6 (ISCC.exe) was not found. Install it or pass -SkipInstaller.' }
-    & $Iscc /Qp "/DAppVersion=$Version" "/DNumericVersion=$Numeric" "/DSourceDir=$SourceDir" "/DOutputDir=$OutputDir" (Join-Path $Root 'installer\hitsounds-rs.iss')
+    # Both packages take the same staged files, including the runtime (D-85).
+    & $Iscc /Qp "/DAppVersion=$Version" "/DNumericVersion=$Numeric" "/DSourceDir=$Stage" "/DOutputDir=$OutputDir" (Join-Path $Root 'installer\hitsounds-rs.iss')
     if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
 }
+Remove-Item -Recurse -Force $Stage
 
 $Sums = Get-ChildItem $OutputDir -File | Where-Object Name -ne 'SHA256SUMS.txt' | Sort-Object Name | ForEach-Object {
     "$((Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLowerInvariant())  $($_.Name)"

@@ -1,5 +1,5 @@
 ; Inno Setup script for the hitsounds-rs installer (D-85). Built by tools/package.ps1,
-; which passes the version and the folder with the release build:
+; which passes the version and the folder with the staged release files:
 ;
 ;     iscc /DAppVersion=0.1.0-alpha.1 /DNumericVersion=0.1.0 /DSourceDir=<dir> /DOutputDir=<dir> installer\hitsounds-rs.iss
 ;

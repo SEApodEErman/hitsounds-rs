@@ -21,7 +21,7 @@ fn main() -> std::io::Result<()> {
     Ok(())
 }
 
-/// Copies the runtime into the profile folder (`target/<profile>/`), where the exe is.
+/// Copies the runtime into the profile folder (`target/<profile>/`), where the exe is (D-74).
 fn bundle_runtime() -> std::io::Result<()> {
     let source = Path::new("runtime");
     for file in RUNTIME_FILES {
@@ -33,10 +33,21 @@ fn bundle_runtime() -> std::io::Result<()> {
         );
         return Ok(());
     }
-    // OUT_DIR is target/<profile>/build/<package>-<hash>/out.
+    // Cargo 1.100 changed OUT_DIR from build/<package>-<hash>/out to
+    // build/<package>/<hash>/out. Find the build folder instead of assuming a depth.
     let out = PathBuf::from(std::env::var("OUT_DIR").expect("cargo sets OUT_DIR"));
-    let Some(profile) = out.ancestors().nth(3) else {
-        return Ok(());
+    let Some(profile) = out
+        .ancestors()
+        .find(|path| path.ends_with("build"))
+        .and_then(Path::parent)
+    else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "Cannot find the profile folder from OUT_DIR {}",
+                out.display()
+            ),
+        ));
     };
     for file in RUNTIME_FILES {
         let from = source.join(file);
