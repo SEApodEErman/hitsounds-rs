@@ -310,7 +310,8 @@ fn waveform(
     let amplitude = (g.wave.height() * 0.46) / f32::from(i8::MAX);
     let width = (viewport.scale * bucket).clamp(1.0, 2.0) as f32;
     let mut mesh = Mesh::default();
-    let color = t::ACCENT.gamma_multiply(0.55);
+    // Neutral, so the accent stays on the Hit volume curve below it (D-92).
+    let color = t::WAVE;
     for (i, &[lo, hi]) in pairs.iter().enumerate().take(end).skip(start) {
         let x = viewport.x(g.plot, i as f64 * bucket);
         let top = y - f32::from(hi) * amplitude;
@@ -331,14 +332,23 @@ fn volume(
     (from, until): (f64, f64),
     color: Color32,
 ) {
+    // D-92: the lane must not read as part of the waveform above it. It gets its own
+    // tinted ground and edge, a filled band under a bold curve, and scale labels, so
+    // even the flat 100 % curve of a new project is plainly a control.
     let p = painter.with_clip_rect(g.volume);
+    p.rect_filled(g.volume, 0, color.gamma_multiply(0.04));
+    p.hline(
+        g.volume.x_range(),
+        g.volume.top() + 0.5,
+        Stroke::new(1.0_f32, color.gamma_multiply(0.45)),
+    );
     let y = |value: f64| g.volume_y(value);
     let point = |time: f64, value: f64| pos2(viewport.x(g.plot, time), y(value));
     for value in [50.0, 100.0] {
         p.hline(g.volume.x_range(), y(value), t::stroke(t::GRID));
     }
     let floor = g.volume.bottom();
-    let fill = color.gamma_multiply(0.07);
+    let fill = color.gamma_multiply(0.16);
     let mut area = Mesh::default();
     let mut segment = |a: Pos2, b: Pos2| {
         let base = area.vertices.len() as u32;
@@ -347,7 +357,7 @@ fn volume(
         }
         area.add_triangle(base, base + 1, base + 2);
         area.add_triangle(base, base + 2, base + 3);
-        p.line_segment([a, b], Stroke::new(1.5_f32, color));
+        p.line_segment([a, b], Stroke::new(2.0_f32, color));
     };
     let points = &envelope.points;
     let visible = grid::visible(points, from, until, |point| point.time);
@@ -369,7 +379,28 @@ fn volume(
     segment(last, point(until, envelope.at(until)));
     p.add(Shape::mesh(area));
     for at in nodes {
-        p.circle(at, 3.5, t::STAGE, Stroke::new(1.5_f32, color));
+        p.circle(at, 4.0, t::STAGE, Stroke::new(2.0_f32, color));
+    }
+    let label = |value: f64, text: &str| {
+        p.text(
+            pos2(g.plot.right() - t::GAP, y(value) + 1.0),
+            Align2::RIGHT_TOP,
+            text,
+            FontId::monospace(t::META_SIZE - 1.0),
+            t::DIM,
+        );
+    };
+    label(100.0, "100%");
+    label(50.0, "50%");
+    if envelope.points.is_empty() {
+        // A new project's curve: say what it is and how to change it.
+        p.text(
+            pos2(g.plot.left() + t::SPACE, (y(100.0) + floor) / 2.0),
+            Align2::LEFT_CENTER,
+            "Every hit at full volume. Ctrl+click here to add a volume point",
+            FontId::proportional(t::META_SIZE),
+            t::TEXT.gamma_multiply(0.8),
+        );
     }
 }
 

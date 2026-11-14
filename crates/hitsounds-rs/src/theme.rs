@@ -24,6 +24,8 @@ pub const ACCENT_HOVER: Color32 = Color32::from_rgb(120, 228, 216);
 pub const ACCENT_PRESS: Color32 = Color32::from_rgb(62, 184, 172);
 pub const ACCENT_SURFACE: Color32 = Color32::from_rgb(24, 50, 52);
 pub const DIFFICULTY: Color32 = Color32::from_rgb(222, 120, 200);
+/// The song waveform: neutral, so the accent marks the Hit volume curve (D-92).
+pub const WAVE: Color32 = Color32::from_rgb(104, 110, 118);
 pub const WARNING: Color32 = Color32::from_rgb(229, 181, 103);
 pub const ERROR: Color32 = Color32::from_rgb(240, 106, 110);
 pub const CLOSE_HOVER: Color32 = Color32::from_rgb(178, 46, 52);
