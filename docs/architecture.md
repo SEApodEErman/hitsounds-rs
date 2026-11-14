@@ -109,6 +109,9 @@ The real-time stack uses the following components.
   grain from the song clock, so the music stays on the hitsound clock. At 1x, or with
   *Keep the song's pitch when slowed down* off, the song is read directly as before.
   `Command::SetKeepPitch` carries the setting; the worker applies it when a project opens.
+- **Seeks and the clock** (D-92): `Engine::send` shows a seek at once, dated one output
+  latency ahead as the callback will report it, and counts it. A callback that rendered
+  before handling every sent seek keeps that position instead of writing its older one.
 - **Offline render** (export, bounce) reuses `hs_audio::mix`, so preview and export
   produce the same output.
 

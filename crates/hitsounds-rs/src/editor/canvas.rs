@@ -32,6 +32,12 @@ const EDGE_ZONE: f32 = 32.0;
 const EDGE_SPEED: f32 = 40.0;
 /// The fastest edge scroll, in points per second.
 const EDGE_MAX_SPEED: f32 = 6000.0;
+/// A wheel step this soon after the last one continues from where that one went, since
+/// the clock shows a seek only once it is heard (D-92). Longer than the output latency.
+const WHEEL_CHAIN_SECONDS: f64 = 0.35;
+/// How far the clock may be from where the last wheel step went for the next step to
+/// still continue from it; further means something else moved the playhead.
+const WHEEL_CHAIN_MS: f64 = 350.0;
 
 /// The pointer tools of the timeline, as in FL Studio's playlist (D-62), in the order
 /// and on the number keys testers asked for (D-86). Right-click deletes a hit with every
@@ -99,6 +105,8 @@ pub struct Timeline {
     pub(crate) viewport: Viewport,
     tween: Option<Zoom>,
     wheel_carry: f32,
+    /// The last wheel seek: where it went (ms) and when (UI seconds), D-92.
+    wheel_seek: Option<(f64, f64)>,
     width: f32,
     gesture: Option<Gesture>,
     context: Option<ContextTarget>,
@@ -134,6 +142,7 @@ impl Default for Timeline {
             },
             tween: None,
             wheel_carry: 0.0,
+            wheel_seek: None,
             width: 400.0,
             gesture: None,
             context: None,
@@ -933,6 +942,11 @@ impl Timeline {
                 self.scroll = (self.scroll - points)
                     .clamp(0.0, g.max_scroll(canvas.view.project.channels.len()));
             } else {
+                // Turning the other way drops what was gathered the old way, so a
+                // touchpad reverses at once instead of first undoing the carry.
+                if self.wheel_carry != 0.0 && self.wheel_carry.signum() != points.signum() {
+                    self.wheel_carry = 0.0;
+                }
                 self.wheel_carry += points;
                 if self.wheel_carry.abs() < 40.0 {
                     continue;
@@ -948,12 +962,15 @@ impl Timeline {
                     } else {
                         self.divisor
                     };
+                    let from =
+                        seek_to.unwrap_or_else(|| self.wheel_from(canvas.clock, now, steps > 0));
                     let time = canvas
                         .view
                         .layer
                         .grid
-                        .step(seek_to.unwrap_or(canvas.clock.position_ms), divisor, steps)
+                        .step(from, divisor, steps)
                         .min(canvas.view.length_ms);
+                    self.wheel_seek = Some((time, now));
                     seek_to = Some(time);
                 }
             }
@@ -963,6 +980,30 @@ impl Timeline {
             if self.follow {
                 self.jump(canvas.view, time as Ms);
             }
+        }
+    }
+
+    /// Where the next wheel step starts (D-92). A seek reaches the clock only once it is
+    /// heard, one output latency later, so the clock alone would send a quick second
+    /// step to the same beat. Steps soon after a wheel seek continue from it instead:
+    /// forward from where playback has got to since, back from the beat it went to, so
+    /// every notch moves a beat even while the song plays.
+    fn wheel_from(&self, clock: &Clock, now: f64, forward: bool) -> f64 {
+        let Some((target, at)) = self.wheel_seek else {
+            return clock.position_ms;
+        };
+        let elapsed = now - at;
+        let heard = if clock.playing {
+            target + elapsed.max(0.0) * 1000.0 * clock.rate
+        } else {
+            target
+        };
+        if elapsed >= WHEEL_CHAIN_SECONDS || (clock.position_ms - heard).abs() > WHEEL_CHAIN_MS {
+            clock.position_ms
+        } else if forward {
+            heard
+        } else {
+            target
         }
     }
 

@@ -36,6 +36,11 @@ struct Clock {
     rate: f64,
     monitor: MonitorSource,
     length_ms: f64,
+    /// Output latency of the last callback: a seek is heard this long after it is sent.
+    latency: Duration,
+    /// Seeks sent to the render thread. While the render thread has handled fewer, its
+    /// position is from before the latest seek and must not replace it (D-92).
+    seeks: u64,
 }
 
 /// Latency reports above this are treated as bogus and clamped.
@@ -46,6 +51,8 @@ struct RenderState {
     rx: Receiver<Command>,
     mixer: Mixer,
     block: Vec<f32>,
+    /// Seeks the mixer has handled, compared with [`Clock::seeks`].
+    seeks: u64,
 }
 
 #[derive(Clone)]
@@ -76,6 +83,8 @@ impl Engine {
             rate: 1.0,
             monitor: MonitorSource::Original,
             length_ms: 0.0,
+            latency: Duration::ZERO,
+            seeks: 0,
         }));
         let stop = Arc::new(AtomicBool::new(false));
 
@@ -98,10 +107,15 @@ impl Engine {
 
     pub fn send(&self, command: Command) {
         if let Command::Seek(ms) = command {
-            // Show the new position at once instead of after the next callback.
+            // Show the new position at once instead of after the next callback. It is
+            // heard one output latency from now, which is also what the callback will
+            // report, so a seek during playback doesn't jump back a moment later.
             if let Ok(mut c) = self.clock.lock() {
                 c.position_ms = ms.max(0.0);
-                c.at = Instant::now();
+                c.at = Instant::now() + c.latency;
+                // Counted before sending, so the render thread never sees more seeks
+                // than the clock has.
+                c.seeks += 1;
             }
         }
         let _ = self.tx.send(command);
@@ -158,6 +172,7 @@ fn run_output(
                 rx,
                 mixer: Mixer::new(rate),
                 block: Vec::new(),
+                seeks: 0,
             })),
             clock,
             restart: Arc::new(AtomicBool::new(false)),
@@ -244,8 +259,11 @@ where
                 let Ok(mut state) = render.try_lock() else {
                     return;
                 };
-                let RenderState { rx, mixer, block } = &mut *state;
+                let RenderState { rx, mixer, block, seeks } = &mut *state;
                 while let Ok(command) = rx.try_recv() {
+                    if matches!(command, Command::Seek(_)) {
+                        *seeks += 1;
+                    }
                     mixer.handle(command);
                 }
                 let stamp = info.timestamp();
@@ -262,16 +280,21 @@ where
 
                 // Never block the audio thread on the UI: skip the update if contended.
                 if let Ok(mut c) = clock.try_lock() {
+                    // A seek sent while this block rendered is not in `position_ms`
+                    // yet: keep the position `Engine::send` set for it (D-92).
+                    let current = c.seeks == *seeks;
                     *c = Clock {
-                        position_ms,
-                        at: heard_at,
+                        position_ms: if current { position_ms } else { c.position_ms },
+                        at: if current { heard_at } else { c.at },
                         // A block that ran into the end reports the stopped state.
                         playing: mixer.playing(),
                         rate: mixer.rate(),
                         monitor: mixer.monitor(),
                         length_ms: mixer.length_ms(),
+                        latency,
+                        seeks: c.seeks,
                     };
-                    if !mixer.playing() {
+                    if !mixer.playing() && current {
                         c.position_ms = mixer.position_ms();
                     }
                 }

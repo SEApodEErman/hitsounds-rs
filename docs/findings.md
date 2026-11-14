@@ -234,6 +234,10 @@ visual memory working (D-42).
   playing, the step is a beat rather than the divisor. Alt+wheel over the timeline zooms
   (wheel up zooms in). In compose mode Ctrl+wheel doubles or halves the divisor.
   **Unverified** in game: the Ctrl+wheel divisor step.
+- **Wheel steps in quick succession while playing** (D-92): each notch moves one beat
+  on from the previous notch, not from the playing clock, which shows a seek only once
+  it is heard. **Unverified** in game: how stable chains quick wheel steps while
+  playing.
 - **Playback speed keeps the pitch** (D-90). Below 1x the editor time-stretches the
   song, so it plays slower at its own pitch; the option *Don't stretch audio when
   changing speed* switches to tape-style varispeed (slower and lower, which the option

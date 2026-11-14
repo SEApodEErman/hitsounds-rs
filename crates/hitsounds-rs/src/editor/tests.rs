@@ -30,6 +30,9 @@ struct Fixture {
     /// Every edit the timeline sent, in order: one entry is one undo step.
     edits: Vec<Edit>,
     body: Rect,
+    /// While playing, a seek shows in the clock this many ms early, as the engine's
+    /// clock does until the seek is heard (D-92).
+    lag: f64,
 }
 
 impl Fixture {
@@ -79,6 +82,7 @@ impl Fixture {
             transport: Vec::new(),
             edits: Vec::new(),
             body: Rect::NOTHING,
+            lag: 0.0,
         }
     }
 
@@ -144,7 +148,10 @@ impl Fixture {
                 }) => self.imported.push((channel, path)),
                 Intent::Transport(action) => {
                     match action {
-                        Transport::Seek { ms } => self.clock.position_ms = ms,
+                        Transport::Seek { ms } => {
+                            let lag = if self.clock.playing { self.lag } else { 0.0 };
+                            self.clock.position_ms = ms - lag;
+                        }
                         Transport::Play => self.clock.playing = true,
                         Transport::Pause => self.clock.playing = false,
                         Transport::Rate { .. } => {}
@@ -350,6 +357,46 @@ fn stable_wheel_seek_shift_playing_zoom_divisor_and_channel_scroll() {
     wheel(&mut h, rail, -1.0, Modifiers::NONE);
     assert!(h.state().timeline.scroll > 0.0);
     assert_eq!(h.state().clock.position_ms, 1000.0);
+}
+
+/// D-92: while playing, each notch moves a beat even though the clock shows a seek
+/// only once it is heard, and even after playback has moved past the beat it went to.
+#[test]
+fn wheel_steps_while_playing_continue_from_the_last_step() {
+    let mut fixture = Fixture::new(4);
+    fixture.lag = 30.0;
+    fixture.clock.position_ms = 1000.0;
+    fixture.clock.playing = true;
+    let mut h = harness(fixture);
+    let cursor = h.state().geometry().plot.center();
+    let sought = |h: &Harness<'_, Fixture>| match h.state().transport.last() {
+        Some(Transport::Seek { ms }) => *ms,
+        _ => panic!("expected a seek"),
+    };
+    wheel(&mut h, cursor, -1.0, Modifiers::NONE);
+    assert_eq!(sought(&h), 1500.0);
+    assert_eq!(
+        h.state().clock.position_ms,
+        1470.0,
+        "the clock lags the seek"
+    );
+    wheel(&mut h, cursor, -1.0, Modifiers::NONE);
+    assert_eq!(
+        sought(&h),
+        2000.0,
+        "a second notch must not land on 1500 again"
+    );
+    // Playback moves on past the beat the wheel went to; back still means a beat back.
+    h.state_mut().clock.position_ms = 2040.0;
+    wheel(&mut h, cursor, 1.0, Modifiers::NONE);
+    assert_eq!(sought(&h), 1500.0);
+    h.state_mut().clock.position_ms = 1540.0;
+    wheel(&mut h, cursor, 1.0, Modifiers::NONE);
+    assert_eq!(sought(&h), 1000.0);
+    // Something else moved the playhead: the next notch starts from the clock.
+    h.state_mut().clock.position_ms = 5200.0;
+    wheel(&mut h, cursor, -1.0, Modifiers::NONE);
+    assert_eq!(sought(&h), 5500.0);
 }
 
 #[test]
