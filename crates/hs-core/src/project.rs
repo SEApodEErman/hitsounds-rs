@@ -64,14 +64,20 @@ pub enum WriteMode {
     HitsoundOnly,
 }
 
-/// What the always-playing hitnormal does at an addition-only moment (D-31, D-78).
+/// What the always-playing hitnormal does at an addition-only moment (D-31, D-78, D-91).
 /// It applies to preview and export alike.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AdditionOnlyNormal {
-    /// Skin default hitnormal of the top addition's sample set (Mapping Tools behaviour).
+    /// The skin hitnormal of the sample set the difficulty's greenlines give the object
+    /// (`[General] SampleSet` when the greenline says 0), as an untouched object would
+    /// play (D-91). `skin_default` was the old default and is read as this.
     #[default]
-    SkinDefault,
+    #[serde(alias = "skin_default")]
+    Difficulty,
+    /// Skin default hitnormal of the top addition's sample set (Mapping Tools behaviour,
+    /// D-31).
+    AdditionsSet,
     /// The skin's `normal-hitnormal`, whatever set the additions use (D-78).
     SkinNormal,
     /// The skin's `soft-hitnormal` (D-78).
@@ -83,21 +89,25 @@ pub enum AdditionOnlyNormal {
 }
 
 impl AdditionOnlyNormal {
-    pub const ALL: [Self; 5] = [
-        Self::SkinDefault,
+    pub const ALL: [Self; 6] = [
+        Self::Difficulty,
+        Self::AdditionsSet,
         Self::SkinSoft,
         Self::SkinNormal,
         Self::SkinDrum,
         Self::Silent,
     ];
 
-    /// The hitnormal's own sample set, when it doesn't follow the additions (D-78).
-    pub fn fixed_set(self) -> Option<SampleSet> {
+    /// The hitnormal's own sample set when it doesn't follow the additions (D-78, D-91).
+    /// `point_set` is the set the difficulty gives the object; `Auto` when there is no
+    /// difficulty (the base layer), which falls back to the additions' set.
+    pub fn hitnormal_set(self, point_set: SampleSet) -> Option<SampleSet> {
         match self {
+            Self::Difficulty => (point_set != SampleSet::Auto).then_some(point_set),
             Self::SkinNormal => Some(SampleSet::Normal),
             Self::SkinSoft => Some(SampleSet::Soft),
             Self::SkinDrum => Some(SampleSet::Drum),
-            Self::SkinDefault | Self::Silent => None,
+            Self::AdditionsSet | Self::Silent => None,
         }
     }
 }
@@ -186,7 +196,7 @@ impl Default for ExportSettings {
             first_custom_index: 1,
             body_sample_first_index: 100,
             grouping_leniency_ms: 15.0,
-            addition_only_normal: AdditionOnlyNormal::SkinDefault,
+            addition_only_normal: AdditionOnlyNormal::Difficulty,
             allow_growth: true,
             auto_fix: true,
             take_over_samples: false,
@@ -341,8 +351,15 @@ mod tests {
 
     #[test]
     fn addition_only_normal_keeps_its_old_names() {
+        // D-91: the old default becomes the new one, the difficulty's set.
         let old: ExportSettings = serde_json::from_str(r#"{"addition_only_normal":"skin_default"}"#).unwrap();
-        assert_eq!(old.addition_only_normal, AdditionOnlyNormal::SkinDefault);
+        assert_eq!(old.addition_only_normal, AdditionOnlyNormal::Difficulty);
+        let missing: ExportSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(missing.addition_only_normal, AdditionOnlyNormal::Difficulty);
+        let json = serde_json::to_value(ExportSettings::default()).unwrap();
+        assert_eq!(json["addition_only_normal"], "difficulty");
+        let additions: ExportSettings = serde_json::from_str(r#"{"addition_only_normal":"additions_set"}"#).unwrap();
+        assert_eq!(additions.addition_only_normal, AdditionOnlyNormal::AdditionsSet);
         let silent: ExportSettings = serde_json::from_str(r#"{"addition_only_normal":"silent"}"#).unwrap();
         assert_eq!(silent.addition_only_normal, AdditionOnlyNormal::Silent);
         let soft = ExportSettings { addition_only_normal: AdditionOnlyNormal::SkinSoft, ..ExportSettings::default() };

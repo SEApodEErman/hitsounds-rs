@@ -75,7 +75,7 @@ folder unless absolute.
     "first_custom_index": 1,
     "body_sample_first_index": 100,
     "grouping_leniency_ms": 15.0,
-    "addition_only_normal": "skin_default",     // or "skin_soft", "skin_normal", "skin_drum" (D-78), "silent" (OQ-1)
+    "addition_only_normal": "difficulty",       // D-91 default; or "additions_set" (D-31), "skin_soft", "skin_normal", "skin_drum" (D-78), "silent" (OQ-1). The old "skin_default" reads as "difficulty".
     "allow_growth": true,
     "auto_fix": true,
     "take_over_samples": false,

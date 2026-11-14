@@ -141,6 +141,12 @@ The port is `osu_format::TimingPointChange`, and it has tests.
 
   This is the rule you described: a lower layer gets mixed into the sample set of the
   layer above it.
+- **hitsounds-rs departs from this at addition-only moments** (D-91): by default the
+  hitnormal's set is the one the difficulty's greenline gives the object (`[General]
+  SampleSet` when the greenline says 0), so a lone drum clap on a soft map plays over
+  `soft-hitnormal`. This is the sound an Auto normal set gives in stable (§1), and it
+  is what the object played before it got any hitsounds. The Mapping Tools rule above
+  is still an option.
 - **BalanceVolumes.** The loudest sample sets the greenline volume. Quieter samples
   get baked into the mix at their relative amplitude, with roughness quantisation to
   limit the number of distinct mixes.

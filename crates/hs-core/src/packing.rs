@@ -185,15 +185,17 @@ fn top_set<'a>(samples: impl Iterator<Item = &'a PackedSample>) -> Option<Sample
         .map(|s| s.set)
 }
 
-/// Applies the hierarchy rule and volume balancing to one package.
-pub fn resolve(package: &Package, addition_only_normal: AdditionOnlyNormal) -> ResolvedPackage {
+/// Applies the hierarchy rule and volume balancing to one package. `point_set` is the
+/// set the difficulty's greenlines give the edge ([`crate::projection::Edge::point_set`]).
+pub fn resolve(package: &Package, addition_only_normal: AdditionOnlyNormal, point_set: SampleSet) -> ResolvedPackage {
     let normals = || package.samples.iter().filter(|s| s.sound == Hitsound::Normal);
     let additions = || package.samples.iter().filter(|s| s.sound.is_addition());
 
-    // With no hitnormal channel, the hitnormal takes the project's fixed set if it has
-    // one (D-78), otherwise the top addition's set as in Mapping Tools (D-31).
+    // With no hitnormal channel, the hitnormal takes the difficulty's set (D-91) or the
+    // project's fixed set (D-78), otherwise the top addition's set as in Mapping Tools
+    // (D-31).
     let normal_set = top_set(normals())
-        .or(addition_only_normal.fixed_set())
+        .or(addition_only_normal.hitnormal_set(point_set))
         .or_else(|| top_set(additions()))
         .unwrap_or(SampleSet::Soft);
     let addition_set = top_set(additions()).unwrap_or(normal_set);
@@ -398,7 +400,7 @@ mod tests {
             sample(0, SampleSet::Normal, Hitsound::Normal, "kick.wav"),
             sample(1, SampleSet::Soft, Hitsound::Normal, "pad.wav"),
         ]);
-        let r = resolve(&p, AdditionOnlyNormal::SkinDefault);
+        let r = resolve(&p, AdditionOnlyNormal::AdditionsSet, SampleSet::Auto);
         assert_eq!(r.normal_set, SampleSet::Normal);
         let slot = &r.requirement.slots["normal-hitnormal"];
         assert_eq!(slot.len(), 2);
@@ -413,7 +415,7 @@ mod tests {
             sample(1, SampleSet::Drum, Hitsound::Clap, "snare.wav"),
             sample(2, SampleSet::Soft, Hitsound::Whistle, "hat.wav"),
         ]);
-        let r = resolve(&p, AdditionOnlyNormal::SkinDefault);
+        let r = resolve(&p, AdditionOnlyNormal::AdditionsSet, SampleSet::Auto);
         assert_eq!((r.normal_set, r.addition_set), (SampleSet::Soft, SampleSet::Drum));
         assert!(r.clap && r.whistle && !r.finish);
         assert!(r.requirement.slots.contains_key("drum-hitwhistle"));
@@ -423,7 +425,7 @@ mod tests {
     #[test]
     fn addition_only_gets_skin_normal_of_addition_set() {
         let p = pkg(0, vec![sample(0, SampleSet::Drum, Hitsound::Clap, "snare.wav")]);
-        let r = resolve(&p, AdditionOnlyNormal::SkinDefault);
+        let r = resolve(&p, AdditionOnlyNormal::AdditionsSet, SampleSet::Auto);
         assert_eq!(r.normal_set, SampleSet::Drum);
         let normal = &r.requirement.slots["drum-hitnormal"];
         assert!(!CustomIndex::needs_file("drum-hitnormal", normal));
@@ -437,7 +439,7 @@ mod tests {
             sample(1, SampleSet::Soft, Hitsound::Whistle, "hat.wav"),
             sample(2, SampleSet::Normal, Hitsound::Finish, "crash.wav"),
         ]);
-        let r = resolve(&p, AdditionOnlyNormal::SkinDefault);
+        let r = resolve(&p, AdditionOnlyNormal::AdditionsSet, SampleSet::Auto);
         let normal_slots: Vec<_> = r.requirement.slots.iter().filter(|(k, _)| k.ends_with("-hitnormal")).collect();
         assert_eq!(normal_slots.len(), 1);
         let (key, mixes) = normal_slots[0];
@@ -453,7 +455,7 @@ mod tests {
             sample(0, SampleSet::Normal, Hitsound::Finish, "crash.wav"),
             sample(1, SampleSet::Soft, Hitsound::Clap, "snare.wav"),
         ]);
-        let r = resolve(&p, AdditionOnlyNormal::SkinSoft);
+        let r = resolve(&p, AdditionOnlyNormal::SkinSoft, SampleSet::Auto);
         assert_eq!((r.normal_set, r.addition_set), (SampleSet::Soft, SampleSet::Normal));
         let normal = &r.requirement.slots["soft-hitnormal"];
         assert!(!CustomIndex::needs_file("soft-hitnormal", normal), "plain skin hitnormal needs no file");
@@ -463,12 +465,35 @@ mod tests {
     }
 
     #[test]
+    fn addition_only_takes_the_difficultys_set() {
+        // D-91: a lone drum clap on a soft greenline plays over soft-hitnormal.
+        let p = pkg(0, vec![sample(0, SampleSet::Drum, Hitsound::Clap, "snare.wav")]);
+        let r = resolve(&p, AdditionOnlyNormal::Difficulty, SampleSet::Soft);
+        assert_eq!((r.normal_set, r.addition_set), (SampleSet::Soft, SampleSet::Drum));
+        let normal = &r.requirement.slots["soft-hitnormal"];
+        assert!(!CustomIndex::needs_file("soft-hitnormal", normal), "plain skin hitnormal needs no file");
+        assert!(r.requirement.slots.contains_key("drum-hitclap"));
+
+        // A real hitnormal channel still wins.
+        let with_kick = pkg(0, vec![
+            sample(0, SampleSet::Drum, Hitsound::Clap, "snare.wav"),
+            sample(1, SampleSet::Normal, Hitsound::Normal, "kick.wav"),
+        ]);
+        let r = resolve(&with_kick, AdditionOnlyNormal::Difficulty, SampleSet::Soft);
+        assert_eq!(r.normal_set, SampleSet::Normal);
+
+        // Without a difficulty (the base layer) it follows the additions, as D-31.
+        let r = resolve(&p, AdditionOnlyNormal::Difficulty, SampleSet::Auto);
+        assert_eq!(r.normal_set, SampleSet::Drum);
+    }
+
+    #[test]
     fn a_fixed_hitnormal_set_leaves_real_hitnormals_alone() {
         let p = pkg(0, vec![
             sample(0, SampleSet::Normal, Hitsound::Finish, "crash.wav"),
             sample(1, SampleSet::Drum, Hitsound::Normal, "kick.wav"),
         ]);
-        let r = resolve(&p, AdditionOnlyNormal::SkinSoft);
+        let r = resolve(&p, AdditionOnlyNormal::SkinSoft, SampleSet::Auto);
         assert_eq!((r.normal_set, r.addition_set), (SampleSet::Drum, SampleSet::Normal));
         let normal = &r.requirement.slots["drum-hitnormal"];
         assert_eq!(normal.len(), 1, "no skin hitnormal is added under a real one");
@@ -476,12 +501,12 @@ mod tests {
 
     #[test]
     fn compatible_requirements_share_an_index() {
-        let a = resolve(&pkg(0, vec![sample(0, SampleSet::Soft, Hitsound::Normal, "kick.wav")]), AdditionOnlyNormal::SkinDefault);
+        let a = resolve(&pkg(0, vec![sample(0, SampleSet::Soft, Hitsound::Normal, "kick.wav")]), AdditionOnlyNormal::AdditionsSet, SampleSet::Auto);
         let b = resolve(&pkg(10, vec![
             sample(0, SampleSet::Soft, Hitsound::Normal, "kick.wav"),
             sample(1, SampleSet::Soft, Hitsound::Clap, "snare.wav"),
-        ]), AdditionOnlyNormal::SkinDefault);
-        let c = resolve(&pkg(20, vec![sample(0, SampleSet::Soft, Hitsound::Normal, "other.wav")]), AdditionOnlyNormal::SkinDefault);
+        ]), AdditionOnlyNormal::AdditionsSet, SampleSet::Auto);
+        let c = resolve(&pkg(20, vec![sample(0, SampleSet::Soft, Hitsound::Normal, "other.wav")]), AdditionOnlyNormal::AdditionsSet, SampleSet::Auto);
         let reqs: Vec<_> = [&a, &b, &c].iter().map(|r| r.requirement.clone()).collect();
         let schema = build_schema(&reqs, None, false, 1, &BTreeSet::new());
         assert_eq!(schema.len(), 2);
@@ -496,7 +521,7 @@ mod tests {
         quiet.volume = 0.4;
         let mut loud = sample(0, SampleSet::Soft, Hitsound::Normal, "kick.wav");
         loud.volume = 0.8;
-        let r = resolve(&pkg(0, vec![loud, quiet]), AdditionOnlyNormal::SkinDefault);
+        let r = resolve(&pkg(0, vec![loud, quiet]), AdditionOnlyNormal::AdditionsSet, SampleSet::Auto);
         assert_eq!(r.volume, 80);
         let clap = r.requirement.slots["soft-hitclap"].iter().next().unwrap();
         assert_eq!(clap.gain_pct, 50);

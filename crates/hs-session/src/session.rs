@@ -613,7 +613,18 @@ impl Session {
                 general_set: d.general_set,
             })
         });
-        let mut preview = hs_export::preview_in_project(&self.project, diff.as_ref(), self.root());
+        // The base layer borrows the greenline sets of the first difficulty, enabled
+        // ones first, so its lone additions sound as they will in export (D-91).
+        let base_sets = self
+            .project
+            .diffs
+            .iter()
+            .filter(|d| d.enabled)
+            .chain(&self.project.diffs)
+            .find_map(|d| self.mapset.diffs.get(&d.file))
+            .map(|d| &d.timeline);
+        let mut preview =
+            hs_export::preview_in_project(&self.project, diff.as_ref(), base_sets, self.root());
         if self.active.is_some() && diff.is_none() {
             preview = Ok(Vec::new());
         }

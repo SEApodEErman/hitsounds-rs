@@ -99,6 +99,7 @@ impl Fixture {
                     edge: 0,
                     slides: 0,
                     object_duration_ms: 0.0,
+                    point_set: SampleSet::Auto,
                 })
                 .collect(),
             ticks: vec![Tick {
@@ -106,6 +107,7 @@ impl Fixture {
                 object: 0,
             }],
             redlines: Vec::new(),
+            sample_sets: Vec::new(),
         };
         let profile = &self.view.project.diffs[0];
         let projection = hs_core::projection::project(&self.view.project, profile, &timeline);

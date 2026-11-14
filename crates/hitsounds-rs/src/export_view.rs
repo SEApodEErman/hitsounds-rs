@@ -475,10 +475,12 @@ fn options(ui: &mut Ui, options: &mut ExportSettings) {
     });
 }
 
-/// How the hitnormal under a lone addition is described in Project settings and Export (D-78).
+/// How the hitnormal under a lone addition is described in Project settings and Export
+/// (D-78, D-91).
 pub fn addition_only_label(choice: AdditionOnlyNormal) -> &'static str {
     match choice {
-        AdditionOnlyNormal::SkinDefault => "Skin hitnormal of the additions' set",
+        AdditionOnlyNormal::Difficulty => "Skin hitnormal of the difficulty's set",
+        AdditionOnlyNormal::AdditionsSet => "Skin hitnormal of the additions' set",
         AdditionOnlyNormal::SkinSoft => "Skin soft-hitnormal",
         AdditionOnlyNormal::SkinNormal => "Skin normal-hitnormal",
         AdditionOnlyNormal::SkinDrum => "Skin drum-hitnormal",

@@ -35,9 +35,10 @@ impl DiffPlan {
         Self::from_projection(project, Some(profile), timeline, projection, bodies)
     }
 
-    /// The base layer as a virtual difficulty (one circle per moment).
-    pub fn for_base(project: &Project) -> Self {
-        let (timeline, projection) = projection::base_view(project);
+    /// The base layer as a virtual difficulty (one circle per moment), with the sample
+    /// sets of `sets` when given (D-91).
+    pub fn for_base(project: &Project, sets: Option<&DiffTimeline>) -> Self {
+        let (timeline, projection) = projection::base_view(project, sets);
         Self::from_projection(project, None, timeline, projection, Bodies::new())
     }
 
@@ -53,7 +54,11 @@ impl DiffPlan {
         let resolved = packing::packages_for(project, &projection)
             .iter()
             .map(|p| match p.target {
-                Target::Edge(_) => packing::resolve(p, project.export.addition_only_normal),
+                Target::Edge(i) => packing::resolve(
+                    p,
+                    project.export.addition_only_normal,
+                    timeline.edges[i].point_set,
+                ),
                 Target::Tick(i) => {
                     let set = bodies
                         .get(&timeline.ticks[i].object)
@@ -224,25 +229,29 @@ pub fn preview(
     project: &Project,
     diff: Option<&PreviewDiff<'_>>,
 ) -> Result<Vec<PreviewHit>, PackingError> {
-    preview_with_mapset(project, diff, None)
+    preview_with_mapset(project, diff, None, None)
 }
 
+/// [`preview`] with the mapset's own samples. `base_sets` is the difficulty whose
+/// greenline sample sets the base layer borrows (D-91); it is ignored for a difficulty.
 pub fn preview_in_project(
     project: &Project,
     diff: Option<&PreviewDiff<'_>>,
+    base_sets: Option<&DiffTimeline>,
     project_dir: &Path,
 ) -> Result<Vec<PreviewHit>, PackingError> {
-    preview_with_mapset(project, diff, Some(project_dir))
+    preview_with_mapset(project, diff, base_sets, Some(project_dir))
 }
 
 fn preview_with_mapset(
     project: &Project,
     diff: Option<&PreviewDiff<'_>>,
+    base_sets: Option<&DiffTimeline>,
     project_dir: Option<&Path>,
 ) -> Result<Vec<PreviewHit>, PackingError> {
     let mut plan = match diff {
         Some(d) => DiffPlan::for_diff(project, d.profile, d.timeline.clone()),
-        None => DiffPlan::for_base(project),
+        None => DiffPlan::for_base(project, base_sets),
     };
 
     // Monitoring: drop inaudible channels, and whole hits that become empty.
@@ -474,7 +483,7 @@ mod tests {
             VolumePoint { time: 1000, volume: 100, curve: Curve::Linear },
             VolumePoint { time: 3000, volume: 50, curve: Curve::Linear },
         ]);
-        let (a, b) = (DiffPlan::for_base(&flat), DiffPlan::for_base(&ramped));
+        let (a, b) = (DiffPlan::for_base(&flat, None), DiffPlan::for_base(&ramped, None));
         let volumes = |p: &DiffPlan| p.resolved.iter().map(|r| r.volume).collect::<Vec<_>>();
         assert_eq!(volumes(&a), vec![100, 100, 50]);
         assert_eq!(volumes(&b), vec![100, 75, 25], "greenlines follow the ramp");
@@ -546,12 +555,64 @@ mod tests {
             hits[2].sounds[0].content,
             BTreeSet::from([skin(SampleSet::Soft, Hitsound::Normal)])
         );
-        let plan = DiffPlan::for_base(&p);
+        let plan = DiffPlan::for_base(&p, None);
         assert_eq!(
             (plan.resolved[2].normal_set, plan.resolved[2].addition_set),
             (SampleSet::Soft, SampleSet::Drum)
         );
         // The kick's own drum hitnormal is untouched where it plays.
+        assert_eq!(plan.resolved[1].normal_set, SampleSet::Drum);
+    }
+
+    #[test]
+    fn a_lone_addition_plays_over_the_difficultys_hitnormal() {
+        // D-91: the snare alone at 3000 ms sits on a soft greenline, so it plays over
+        // the skin's soft-hitnormal, not the drum-hitnormal of its own set.
+        let p = project();
+        let doc = OsuDocument::parse(
+            "osu file format v14
+
+[General]
+SampleSet: Normal
+
+[TimingPoints]
+0,500,4,2,0,60,1,0
+
+[HitObjects]
+0,0,1000,1,0,0:0:0:0:
+0,0,2000,1,0,0:0:0:0:
+0,0,3000,1,0,0:0:0:0:
+",
+        );
+        let timeline = DiffTimeline::from_document(&doc).unwrap();
+        let objects = doc.hit_objects().unwrap();
+        let points = doc.timing_points().unwrap();
+        let profile = DiffProfile::new("d.osu", "D");
+        let hits = preview(
+            &p,
+            Some(&PreviewDiff {
+                profile: &profile,
+                timeline: &timeline,
+                objects: &objects,
+                points: &points,
+                general_set: SampleSet::Normal,
+            }),
+        )
+        .unwrap();
+        assert_eq!(
+            hits[2].sounds[0].content,
+            BTreeSet::from([skin(SampleSet::Soft, Hitsound::Normal)])
+        );
+        assert_eq!(
+            hits[2].sounds[1].content,
+            BTreeSet::from([file("samples/snare.wav")])
+        );
+        let plan = DiffPlan::for_diff(&p, &profile, timeline);
+        assert_eq!(
+            (plan.resolved[2].normal_set, plan.resolved[2].addition_set),
+            (SampleSet::Soft, SampleSet::Drum)
+        );
+        // The kick's own drum hitnormal still plays where it is.
         assert_eq!(plan.resolved[1].normal_set, SampleSet::Drum);
     }
 

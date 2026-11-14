@@ -8,8 +8,8 @@
 
 use crate::diff::TickPolicy;
 use crate::{ChannelId, DiffProfile, Ms, Project};
-use osu_format::timing::active_point;
-use osu_format::{HitObjectKind, OsuDocument};
+use osu_format::timing::{HITSOUND_LOOKAHEAD_MS, active_point};
+use osu_format::{HitObjectKind, OsuDocument, SampleSet};
 use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -35,6 +35,10 @@ pub struct Edge {
     pub slides: u32,
     /// Duration of the owning object in ms (0 for circles).
     pub object_duration_ms: f64,
+    /// The sample set the difficulty's greenline gives this edge, or `[General]
+    /// SampleSet` when the greenline says 0: what a hitnormal with an Auto set plays
+    /// (D-91). `Auto` when there is no difficulty (the base layer).
+    pub point_set: SampleSet,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
@@ -61,6 +65,10 @@ pub struct DiffTimeline {
     pub ticks: Vec<Tick>,
     /// Sorted by time.
     pub redlines: Vec<Redline>,
+    /// Each timing point's time and the set it gives an Auto hitnormal (`[General]
+    /// SampleSet` for a point that says 0), sorted by time (D-91). Empty for the base
+    /// layer.
+    pub sample_sets: Vec<(f64, SampleSet)>,
 }
 
 impl DiffTimeline {
@@ -96,6 +104,7 @@ impl DiffTimeline {
                     edge: 0,
                     slides: 0,
                     object_duration_ms: 0.0,
+                    point_set: SampleSet::Auto,
                 }),
                 HitObjectKind::Spinner => {
                     let end = o.explicit_end_time().unwrap_or(o.time);
@@ -106,6 +115,7 @@ impl DiffTimeline {
                         edge: 0,
                         slides: 0,
                         object_duration_ms: f64::from(end) - f64::from(o.time),
+                        point_set: SampleSet::Auto,
                     });
                 }
                 HitObjectKind::Slider => {
@@ -133,6 +143,7 @@ impl DiffTimeline {
                             edge: e,
                             slides: slides as u32,
                             object_duration_ms: span * slides as f64,
+                            point_set: SampleSet::Auto,
                         });
                     }
                     if tick_rate > 0.0 && px_per_beat.is_finite() && px_per_beat > 0.0 {
@@ -162,7 +173,34 @@ impl DiffTimeline {
         }
         tl.edges.sort_by_key(|e| e.time);
         tl.ticks.sort_by_key(|t| t.time);
+
+        // D-91: the set each edge gets from the greenlines. A stable sort keeps file
+        // order at equal times, so the later of two points at one time wins.
+        let general = crate::import::general_sample_set(doc);
+        tl.sample_sets = points
+            .iter()
+            .map(|p| (p.time, if p.sample_set == SampleSet::Auto { general } else { p.sample_set }))
+            .collect();
+        if tl.sample_sets.is_empty() {
+            tl.sample_sets.push((0.0, general));
+        }
+        tl.sample_sets.sort_by(|a, b| a.0.total_cmp(&b.0));
+        for i in 0..tl.edges.len() {
+            tl.edges[i].point_set = tl.point_set_at(tl.edges[i].time);
+        }
         Ok(tl)
+    }
+
+    /// The set a hitnormal with an Auto set plays at `time`, looked up 5 ms ahead as
+    /// osu! does (D-91). `Auto` when the timeline has no timing points (the base layer).
+    pub fn point_set_at(&self, time: Ms) -> SampleSet {
+        let t = f64::from(time) + HITSOUND_LOOKAHEAD_MS;
+        self.sample_sets
+            .iter()
+            .rev()
+            .find(|(at, _)| *at <= t)
+            .or(self.sample_sets.first())
+            .map_or(SampleSet::Auto, |&(_, set)| set)
     }
 
     /// The redline governing `time`.
@@ -260,14 +298,17 @@ pub fn zip_events(events: impl IntoIterator<Item = (ChannelId, Ms)>, leniency: M
 
 /// The base layer as if it were a difficulty with one circle per moment. Preview of
 /// the base uses it so the full hitsound score gets exactly the packing a real
-/// difficulty gets (D-26).
-pub fn base_view(project: &Project) -> (DiffTimeline, Projection) {
+/// difficulty gets (D-26). The circles take their sample sets from `sets`, a real
+/// difficulty's timeline, when given (D-91): the base layer has no greenlines of its
+/// own.
+pub fn base_view(project: &Project, sets: Option<&DiffTimeline>) -> (DiffTimeline, Projection) {
     let leniency = project.export.grouping_leniency_ms.round() as Ms;
     let moments = zip_events(project.base_events(), leniency);
     let mut timeline = DiffTimeline::default();
     let mut projection = Projection::default();
     for (i, (time, mut channels)) in moments.into_iter().enumerate() {
-        timeline.edges.push(Edge { time, kind: EdgeKind::Circle, object: i, edge: 0, slides: 0, object_duration_ms: 0.0 });
+        let point_set = sets.map_or(SampleSet::Auto, |tl| tl.point_set_at(time));
+        timeline.edges.push(Edge { time, kind: EdgeKind::Circle, object: i, edge: 0, slides: 0, object_duration_ms: 0.0, point_set });
         channels.sort_unstable();
         projection.hits.push(ProjectedHit { time, target: Target::Edge(i), channels, kind: HitKind::Matched });
     }
@@ -355,7 +396,7 @@ mod tests {
     use osu_format::{Hitsound, SampleSet};
 
     fn circle(i: usize, time: Ms) -> Edge {
-        Edge { time, kind: EdgeKind::Circle, object: i, edge: 0, slides: 0, object_duration_ms: 0.0 }
+        Edge { time, kind: EdgeKind::Circle, object: i, edge: 0, slides: 0, object_duration_ms: 0.0, point_set: SampleSet::Auto }
     }
 
     fn timeline(times: &[Ms]) -> DiffTimeline {
@@ -363,6 +404,7 @@ mod tests {
             edges: times.iter().enumerate().map(|(i, &t)| circle(i, t)).collect(),
             ticks: vec![Tick { time: 1250, object: 0 }],
             redlines: vec![Redline { time: 0.0, beat_length: 500.0, meter: 4 }],
+            sample_sets: Vec::new(),
         }
     }
 
@@ -394,9 +436,25 @@ mod tests {
     #[test]
     fn base_view_has_one_circle_per_moment() {
         let (p, kick, _) = project_with_kick_and_fallback();
-        let (tl, proj) = base_view(&p);
+        let (tl, proj) = base_view(&p, None);
         assert_eq!(tl.edges.iter().map(|e| e.time).collect::<Vec<_>>(), vec![1000, 1250, 1500]);
         assert!(proj.hits.iter().all(|h| h.channels == vec![kick] && h.kind == HitKind::Matched));
+        assert!(tl.edges.iter().all(|e| e.point_set == SampleSet::Auto));
+    }
+
+    #[test]
+    fn base_view_borrows_a_difficultys_sample_sets() {
+        // D-91: soft until a drum greenline at 1245, which the 1250 moment sees 5 ms ahead.
+        let (p, _, _) = project_with_kick_and_fallback();
+        let diff = DiffTimeline::from_document(&OsuDocument::parse(
+            "osu file format v14\n\n[TimingPoints]\n0,500,4,2,0,70,1,0\n1245,-100,4,3,0,70,0,0\n",
+        ))
+        .unwrap();
+        let (tl, _) = base_view(&p, Some(&diff));
+        assert_eq!(
+            tl.edges.iter().map(|e| e.point_set).collect::<Vec<_>>(),
+            vec![SampleSet::Soft, SampleSet::Drum, SampleSet::Drum]
+        );
     }
 
     fn project_with_kick_and_fallback() -> (Project, ChannelId, ChannelId) {
@@ -449,8 +507,8 @@ mod tests {
         let mut tl = timeline(&[1000]);
         // 1-slide slider 1000 -> 1250 (half a beat at 120 bpm): tail on 1/2 -> muted by default.
         tl.edges = vec![
-            Edge { time: 1000, kind: EdgeKind::SliderHead, object: 0, edge: 0, slides: 1, object_duration_ms: 250.0 },
-            Edge { time: 1250, kind: EdgeKind::SliderTail, object: 0, edge: 1, slides: 1, object_duration_ms: 250.0 },
+            Edge { time: 1000, kind: EdgeKind::SliderHead, object: 0, edge: 0, slides: 1, object_duration_ms: 250.0, point_set: SampleSet::Auto },
+            Edge { time: 1250, kind: EdgeKind::SliderTail, object: 0, edge: 1, slides: 1, object_duration_ms: 250.0, point_set: SampleSet::Auto },
         ];
         let out = project(&p, &diff, &tl);
         // 1250 has a kick event in the base, so it is Matched, not muted.
@@ -465,6 +523,34 @@ mod tests {
         OsuDocument::parse(&format!(
             "osu file format v14\n\n[Difficulty]\nSliderMultiplier:1\nSliderTickRate:{tick_rate}\n\n[TimingPoints]\n0,500,4,2,0,70,1,0\n\n[HitObjects]\n{slider}\n"
         ))
+    }
+
+    #[test]
+    fn edges_take_the_greenline_set_or_the_general_one() {
+        // D-91: soft redline, a drum greenline at 1995 (within the 5 ms lookahead of the
+        // 2000 circle) and a 0-set greenline at 3000 that falls back to [General].
+        let doc = OsuDocument::parse(
+            "osu file format v14
+
+[General]
+SampleSet: Normal
+
+[TimingPoints]
+3000,-100,4,0,0,70,0,0
+0,500,4,2,0,70,1,0
+1995,-100,4,3,0,70,0,0
+
+[HitObjects]
+0,0,1000,1,0,0:0:0:0:
+0,0,2000,1,0,0:0:0:0:
+0,0,3500,1,0,0:0:0:0:
+",
+        );
+        let tl = DiffTimeline::from_document(&doc).unwrap();
+        assert_eq!(
+            tl.edges.iter().map(|e| e.point_set).collect::<Vec<_>>(),
+            vec![SampleSet::Soft, SampleSet::Drum, SampleSet::Normal]
+        );
     }
 
     #[test]

@@ -118,7 +118,7 @@ mod tests {
     }
 
     fn tail(time: i32, duration: f64, slides: u32) -> Edge {
-        Edge { time, kind: EdgeKind::SliderTail, object: 0, edge: slides as usize, slides, object_duration_ms: duration }
+        Edge { time, kind: EdgeKind::SliderTail, object: 0, edge: slides as usize, slides, object_duration_ms: duration, point_set: osu_format::SampleSet::Auto }
     }
 
     #[test]

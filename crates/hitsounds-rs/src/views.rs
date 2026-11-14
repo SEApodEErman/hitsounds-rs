@@ -1146,7 +1146,7 @@ fn project_settings(
             }
             widgets::help(
                 ui,
-                "osu! always plays a hitnormal. When a whistle, finish or clap has no hitnormal channel under it, this one plays, in preview and export. A fixed set keeps, say, soft-hitnormal under a normal-set crash.",
+                "osu! always plays a hitnormal. When a whistle, finish or clap has no hitnormal channel under it, this one plays, in preview and export. The difficulty's set is the one its greenlines give the object, so a lone drum clap on a soft map plays over soft-hitnormal. The base layer borrows the first difficulty's greenlines.",
             );
         });
     });
