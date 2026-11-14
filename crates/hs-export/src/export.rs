@@ -57,6 +57,9 @@ pub struct Manifest {
     pub mapset_dir: Option<PathBuf>,
     #[serde(default)]
     pub(crate) sliders: slider::History,
+    /// The base hitsound difficulty written into the mapset last time (D-95).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hitsound_diff: Option<String>,
 }
 
 impl Manifest {
@@ -98,6 +101,33 @@ impl Manifest {
     pub(crate) fn applies_to(&self, mapset: &Path) -> bool {
         self.mapset_dir.as_deref().is_none_or(|p| p == mapset)
     }
+
+    /// The base hitsound difficulty hitsounds-rs wrote into `mapset`, if any (D-95).
+    fn hitsound_diff(&self, mapset: &Path) -> Option<&str> {
+        self.hitsound_diff
+            .as_deref()
+            .filter(|_| self.applies_to(mapset))
+    }
+}
+
+/// The `[Metadata] Version` of the base hitsound difficulty (D-95).
+pub const BASE_VERSION: &str = "Hitsounds (base layer)";
+
+/// Whether `file` is named as a base hitsound difficulty (D-95). Such a file is output,
+/// never a difficulty to hitsound.
+pub fn is_base_file(file: &str) -> bool {
+    file.to_ascii_lowercase()
+        .ends_with(&format!("[{}].osu", BASE_VERSION.to_ascii_lowercase()))
+}
+
+/// The base hitsound difficulty's file name, after the template's
+/// `Artist - Title (Creator) [Version].osu`.
+fn base_file_name(template: &str) -> String {
+    let stem = template.rsplit_once('.').map_or(template, |(stem, _)| stem);
+    match stem.rfind('[').filter(|_| stem.ends_with(']')) {
+        Some(open) => format!("{}[{BASE_VERSION}].osu", &stem[..open]),
+        None => format!("{stem} [{BASE_VERSION}].osu"),
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -121,8 +151,11 @@ pub struct DiffStats {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DiffExport {
-    /// The difficulty's file name in the mapset.
+    /// The difficulty's file name in the mapset. For the base hitsound difficulty, the
+    /// name it is written under in the mapset.
     pub file: String,
+    /// This is the base hitsound difficulty (D-95), not one of the mapset's.
+    pub base: bool,
     /// The file name written: the same in direct mode, a new one in hitsound-only mode.
     pub out_file: String,
     pub label: String,
@@ -187,7 +220,10 @@ struct Foreign {
 }
 
 struct Prepared<'a> {
-    profile: &'a DiffProfile,
+    /// `None` for the base hitsound difficulty (D-95).
+    profile: Option<&'a DiffProfile>,
+    file: String,
+    label: String,
     original: String,
     doc: OsuDocument,
     plan: DiffPlan,
@@ -308,6 +344,22 @@ pub fn plan(project: &Project, project_dir: &Path, library: &mut SampleLibrary) 
         })
         .collect();
     let take_over = settings.take_over_samples && direct;
+    // D-95: the base hitsound difficulty borrows the settings and timing of the first
+    // difficulty, the one the editor's base layer uses.
+    let generated = manifest.hitsound_diff(mapset).map(str::to_owned);
+    let base = settings
+        .base_hitsound_diff
+        .then(|| base_template(mapset, &out.inputs, generated.as_deref()));
+    let base_name = base
+        .as_ref()
+        .and_then(|t| t.as_ref().ok())
+        .map(|t| base_file_name(&t.file));
+    let ours_or_written = |file: &str| {
+        [generated.as_deref(), base_name.as_deref()]
+            .into_iter()
+            .flatten()
+            .any(|name| name.eq_ignore_ascii_case(file))
+    };
     let enabled: BTreeSet<_> = project
         .diffs
         .iter()
@@ -318,7 +370,7 @@ pub fn plan(project: &Project, project_dir: &Path, library: &mut SampleLibrary) 
     let unchanged: Vec<_> = out
         .inputs
         .keys()
-        .filter(|file| osu_file(file) && !enabled.contains(file.as_str()))
+        .filter(|file| osu_file(file) && !enabled.contains(file.as_str()) && !ours_or_written(file))
         .collect();
     let mut retained_indices = BTreeSet::new();
     let mut protected_audio = BTreeSet::new();
@@ -399,7 +451,9 @@ pub fn plan(project: &Project, project_dir: &Path, library: &mut SampleLibrary) 
                     ));
                 }
                 prepared.push(Prepared {
-                    profile,
+                    profile: Some(profile),
+                    file: profile.file.clone(),
+                    label: profile.label.clone(),
                     original,
                     doc,
                     plan,
@@ -408,7 +462,62 @@ pub fn plan(project: &Project, project_dir: &Path, library: &mut SampleLibrary) 
             Err(e) => out.problems.push(format!("{}: {e}", profile.file)),
         }
     }
-    if project.diffs.iter().all(|d| !d.enabled) {
+    match base {
+        Some(Ok(template)) => {
+            let plan = DiffPlan::for_base(project, Some(&template.timeline));
+            let file = base_file_name(&template.file);
+            let existing = out
+                .inputs
+                .keys()
+                .find(|f| f.eq_ignore_ascii_case(&file))
+                .cloned();
+            let ours = existing.as_deref().is_some_and(|f| {
+                generated
+                    .as_deref()
+                    .is_some_and(|g| g.eq_ignore_ascii_case(f))
+            });
+            if plan.timeline.edges.is_empty() {
+                out.problems.push(
+                    "the base layer has no hits, so there is no hitsound difficulty to write"
+                        .into(),
+                );
+            } else if direct && existing.is_some() && !ours {
+                out.problems.push(format!(
+                    "{file} already exists in the mapset and was not written by hitsounds-rs. Rename or remove it to write the base hitsound difficulty"
+                ));
+            } else {
+                // Rewrite the earlier one under its own spelling of the name.
+                let file = existing.filter(|_| direct).unwrap_or(file);
+                let original = if direct && ours {
+                    std::fs::read_to_string(mapset.join(&file)).unwrap_or_default()
+                } else {
+                    String::new()
+                };
+                prepared.push(Prepared {
+                    profile: None,
+                    file,
+                    label: "Base hitsound difficulty".into(),
+                    original,
+                    doc: base_document(&template.doc, &plan.timeline),
+                    plan,
+                });
+            }
+        }
+        Some(Err(problem)) => out.problems.push(problem),
+        None => {}
+    }
+    // An earlier base hitsound difficulty that this export doesn't write again goes, as
+    // generated samples do (findings 7, "no unused files"). It is backed up first.
+    if direct
+        && let Some(old) = &generated
+        && !prepared
+            .iter()
+            .any(|p| p.profile.is_none() && p.file.eq_ignore_ascii_case(old))
+        && let Some(file) = out.inputs.keys().find(|f| f.eq_ignore_ascii_case(old))
+    {
+        out.stale.push(file.clone());
+    }
+    if project.diffs.iter().all(|d| !d.enabled) && !settings.base_hitsound_diff {
         out.problems
             .push("no difficulty is enabled for export".into());
     }
@@ -440,7 +549,7 @@ pub fn plan(project: &Project, project_dir: &Path, library: &mut SampleLibrary) 
     let mut used_indices: BTreeSet<u32> = BTreeSet::new();
 
     for p in &prepared {
-        let file = &p.profile.file;
+        let file = &p.file;
         let indices = match packing::assign(&p.plan.resolved, &schema) {
             Ok(i) => i,
             Err(e) => {
@@ -449,7 +558,7 @@ pub fn plan(project: &Project, project_dir: &Path, library: &mut SampleLibrary) 
             }
         };
         used_indices.extend(indices.iter().copied());
-        let hits = p.plan.written_hits(Some(p.profile), &indices);
+        let hits = p.plan.written_hits(p.profile, &indices);
 
         let (mut objects, mut points) = match (p.doc.hit_objects(), p.doc.timing_points()) {
             (Ok(o), Ok(t)) => (o, t),
@@ -465,7 +574,7 @@ pub fn plan(project: &Project, project_dir: &Path, library: &mut SampleLibrary) 
         let general_set = general_sample_set(&p.doc);
         apply_hits(&p.plan.timeline, &mut objects, &mut points, &hits, &schema, general_set);
         let expected_edges = edge_sounds(&p.plan.timeline, &objects, &points, general_set);
-        if direct {
+        if direct && p.profile.is_some() {
             slider::apply(
                 &p.plan.timeline,
                 &mut objects,
@@ -670,15 +779,18 @@ pub fn plan(project: &Project, project_dir: &Path, library: &mut SampleLibrary) 
             greenlines_removed,
         };
         let (out_file, updated) = match settings.write_mode {
+            // The base hitsound difficulty is one already.
             WriteMode::Direct => (file.clone(), direct_text),
+            WriteMode::HitsoundOnly if p.profile.is_none() => (file.clone(), direct_text),
             WriteMode::HitsoundOnly => {
                 hitsound_only(&new_doc, &p.plan.timeline, &hits, &tick_circles, file)
             }
         };
         out.diffs.push(DiffExport {
             file: file.clone(),
+            base: p.profile.is_none(),
             out_file,
-            label: p.profile.label.clone(),
+            label: p.label.clone(),
             changed: updated != p.original,
             original: p.original.clone(),
             updated,
@@ -986,15 +1098,7 @@ fn hitsound_only(
     if let Some(section) = doc.section_mut("Events") {
         section.replace_lines(Vec::new());
     }
-    if let Some(section) = doc.section_mut("Metadata") {
-        for line in &mut section.lines {
-            if let Some(version) = line.strip_prefix("Version:") {
-                *line = format!("Version:{} (hitsounds)", version.trim_end());
-            } else if line.starts_with("BeatmapID:") {
-                *line = "BeatmapID:0".into();
-            }
-        }
-    }
+    rename(&mut doc, |version| format!("{version} (hitsounds)"));
     let out_file = match file.rsplit_once('.') {
         Some((stem, ext)) => match stem.rsplit_once(']') {
             Some((head, tail)) => format!("{head} (hitsounds)]{tail}.{ext}"),
@@ -1003,6 +1107,83 @@ fn hitsound_only(
         None => format!("{file} (hitsounds)"),
     };
     (out_file, doc.serialize())
+}
+
+/// Sets `[Metadata] Version` from the old one and clears `BeatmapID`, so osu! treats
+/// the file as a new difficulty of the set.
+fn rename(doc: &mut OsuDocument, version: impl Fn(&str) -> String) {
+    if let Some(section) = doc.section_mut("Metadata") {
+        for line in &mut section.lines {
+            if let Some(old) = line.strip_prefix("Version:") {
+                *line = format!("Version:{}", version(old.trim()));
+            } else if line.starts_with("BeatmapID:") {
+                *line = "BeatmapID:0".into();
+            }
+        }
+    }
+}
+
+/// The difficulty the base hitsound difficulty is made from (D-95).
+struct Template {
+    file: String,
+    doc: OsuDocument,
+    timeline: DiffTimeline,
+}
+
+/// The first readable standard or catch difficulty in the mapset, by file name, as
+/// `Mapset::reference` picks it for the editor. An earlier base hitsound difficulty is
+/// never one.
+fn base_template(
+    mapset: &Path,
+    inputs: &BTreeMap<String, crate::write::FileStamp>,
+    generated: Option<&str>,
+) -> Result<Template, String> {
+    inputs
+        .keys()
+        .filter(|f| osu_file(f) && !is_base_file(f))
+        .filter(|f| generated.is_none_or(|g| !g.eq_ignore_ascii_case(f)))
+        .find_map(|file| {
+            let text = std::fs::read_to_string(mapset.join(file)).ok()?;
+            let doc = OsuDocument::parse(&text);
+            doc.format_version()?;
+            if !matches!(doc.value("General", "Mode"), None | Some("0") | Some("2")) {
+                return None;
+            }
+            let timeline = DiffTimeline::from_document(&doc).ok()?;
+            Some(Template {
+                file: file.clone(),
+                doc,
+                timeline,
+            })
+        })
+        .ok_or_else(|| {
+            "the mapset has no readable difficulty to base the hitsound difficulty on".into()
+        })
+}
+
+/// The base layer as a difficulty of its own (D-95): the template's settings and timing,
+/// no storyboard or breaks, and one circle per base-layer moment, as in a hitsound
+/// difficulty made by hand. Its hitsounds are then applied like any difficulty's.
+fn base_document(template: &OsuDocument, timeline: &DiffTimeline) -> OsuDocument {
+    let mut doc = template.clone();
+    let circles = timeline
+        .edges
+        .iter()
+        .enumerate()
+        .map(|(i, edge)| {
+            let kind = if i == 0 { 5 } else { 1 };
+            format!("256,192,{},{kind},0,0:0:0:0:", edge.time)
+        })
+        .collect();
+    if let Some(section) = doc.section_mut("HitObjects") {
+        section.replace_lines(circles);
+    }
+    if let Some(section) = doc.section_mut("Events") {
+        // Keep the blank line that separates it from the next section.
+        section.replace_lines(vec![String::new()]);
+    }
+    rename(&mut doc, |_| BASE_VERSION.into());
+    doc
 }
 
 fn unix_ms() -> u128 {
@@ -1046,7 +1227,7 @@ fn check_inputs(plan: &ExportPlan) -> Result<(), ExportError> {
             changed.cloned().unwrap_or_else(|| "the mapset".into()),
         ));
     }
-    for d in &plan.diffs {
+    for d in plan.diffs.iter().filter(|d| !d.base) {
         let now = std::fs::read(mapset.join(&d.file))?;
         if now != d.original.as_bytes() {
             return Err(ExportError::Changed(d.file.clone()));
@@ -1113,6 +1294,7 @@ fn execute_direct(plan: &ExportPlan, project_dir: &Path) -> Result<ExportReport,
             .collect(),
         mapset_dir: Some(mapset.clone()),
         sliders: plan.sliders.clone(),
+        hitsound_diff: plan.diffs.iter().find(|d| d.base).map(|d| d.file.clone()),
     };
     let manifest_bytes = serde_json::to_vec_pretty(&manifest).map_err(std::io::Error::other)?;
     let path = Manifest::path(project_dir);
@@ -1145,7 +1327,7 @@ fn execute_hitsound_only(
     let mut audio = BTreeSet::new();
     for d in &plan.diffs {
         write_atomic(&staged.path().join(&d.out_file), d.updated.as_bytes())?;
-        if let Some(relative) = audio_filename(&OsuDocument::parse(&d.original)) {
+        if let Some(relative) = audio_filename(&OsuDocument::parse(&d.updated)) {
             audio.insert(relative);
         }
     }
@@ -1378,6 +1560,131 @@ mod tests {
         let next = execute(&plan, &fixture.root).unwrap();
         assert_ne!(next.out_dir, report.out_dir);
         assert!(report.out_dir.is_dir());
+    }
+
+    const BASE: &str = "Hard [Hitsounds (base layer)].osu";
+
+    #[test]
+    fn base_file_names_follow_the_template_difficulty() {
+        assert_eq!(base_file_name("Hard.osu"), BASE);
+        assert_eq!(
+            base_file_name("A - B (C) [Insane].osu"),
+            "A - B (C) [Hitsounds (base layer)].osu"
+        );
+        assert!(is_base_file("a - b (c) [HITSOUNDS (BASE LAYER)].OSU"));
+        assert!(!is_base_file("A - B (C) [Hitsounds].osu"));
+    }
+
+    #[test]
+    fn base_document_drops_events_and_objects_but_keeps_its_sections_apart() {
+        let template = OsuDocument::parse(
+            "osu file format v14\r\n\r\n[Metadata]\r\nVersion:Insane\r\nBeatmapID:123\r\n\r\n[Events]\r\n0,0,\"bg.jpg\",0,0\r\n2,1000,2000\r\n\r\n[TimingPoints]\r\n0,500,4,2,0,75,1,0\r\n\r\n[HitObjects]\r\n64,64,700,2,0,L|128:64,1,60\r\n",
+        );
+        let mut timeline = DiffTimeline::default();
+        for (i, time) in [500, 750].into_iter().enumerate() {
+            timeline.edges.push(hs_core::Edge {
+                time,
+                kind: hs_core::EdgeKind::Circle,
+                object: i,
+                edge: 0,
+                slides: 0,
+                object_duration_ms: 0.0,
+                point_set: SampleSet::Auto,
+            });
+        }
+        assert_eq!(
+            base_document(&template, &timeline).serialize(),
+            "osu file format v14\r\n\r\n[Metadata]\r\nVersion:Hitsounds (base layer)\r\nBeatmapID:0\r\n\r\n[Events]\r\n\r\n[TimingPoints]\r\n0,500,4,2,0,75,1,0\r\n\r\n[HitObjects]\r\n256,192,500,5,0,0:0:0:0:\r\n256,192,750,1,0,0:0:0:0:\r\n"
+        );
+    }
+
+    #[test]
+    fn base_hitsound_difficulty_is_written_beside_untouched_difficulties() {
+        let mut fixture = Fixture::new();
+        fixture.project.export.base_hitsound_diff = true;
+        fixture.project.diffs[0].enabled = false;
+        let plan = fixture.plan();
+        assert!(plan.problems.is_empty(), "{:?}", plan.problems);
+        let [base] = plan.diffs.as_slice() else {
+            panic!("expected only the base difficulty: {:?}", plan.diffs);
+        };
+        assert!(base.base && base.changed);
+        assert_eq!((base.file.as_str(), base.stats.edges), (BASE, 2));
+
+        execute(&plan, &fixture.root).unwrap();
+        let mapset = &fixture.project.mapset_dir.clone();
+        assert_eq!(fs::read_to_string(fixture.map()).unwrap(), MAP);
+        let written = fs::read_to_string(mapset.join(BASE)).unwrap();
+        assert_eq!(written, base.updated);
+        assert!(written.contains("Version:Hitsounds (base layer)\r\n"));
+        let doc = OsuDocument::parse(&written);
+        let objects = doc.hit_objects().unwrap();
+        assert_eq!(
+            objects.iter().map(|o| (o.time, o.kind)).collect::<Vec<_>>(),
+            [
+                (1000, osu_format::HitObjectKind::Circle),
+                (2500, osu_format::HitObjectKind::Circle)
+            ]
+        );
+        assert!(objects.iter().all(|o| o.hit_sample.normal_set == SampleSet::Drum));
+        let sample = &plan.samples[0].name;
+        assert!(mapset.join(sample).is_file(), "{sample}");
+        let manifest = Manifest::load(&fixture.root);
+        assert_eq!(manifest.hitsound_diff.as_deref(), Some(BASE));
+
+        // A second export rewrites nothing; leaving the base out removes it.
+        fixture.project.schema = plan.schema;
+        let again = fixture.plan();
+        assert!(again.problems.is_empty(), "{:?}", again.problems);
+        assert!(!again.diffs[0].changed);
+        assert!(again.stale.is_empty(), "{:?}", again.stale);
+        fixture.project.export.base_hitsound_diff = false;
+        fixture.project.diffs[0].enabled = true;
+        let without = fixture.plan();
+        assert!(without.problems.is_empty(), "{:?}", without.problems);
+        assert!(without.diffs.iter().all(|d| !d.base));
+        assert!(
+            without.stale.contains(&BASE.to_owned()),
+            "{:?}",
+            without.stale
+        );
+        let report = execute(&without, &fixture.root).unwrap();
+        assert!(!mapset.join(BASE).exists());
+        assert_eq!(
+            fs::read_to_string(report.backup_dir.unwrap().join(BASE)).unwrap(),
+            written
+        );
+        assert_eq!(Manifest::load(&fixture.root).hitsound_diff, None);
+    }
+
+    #[test]
+    fn base_hitsound_difficulty_never_replaces_a_mappers_file() {
+        let mut fixture = Fixture::new();
+        fixture.project.export.base_hitsound_diff = true;
+        fs::write(fixture.project.mapset_dir.join(BASE), MAP).unwrap();
+        let plan = fixture.plan();
+        assert!(
+            plan.problems
+                .iter()
+                .any(|p| p.contains("was not written by hitsounds-rs")),
+            "{:?}",
+            plan.problems
+        );
+    }
+
+    #[test]
+    fn base_hitsound_difficulty_goes_to_the_export_folder_in_hitsound_only_mode() {
+        let mut fixture = Fixture::new();
+        fixture.project.export.write_mode = WriteMode::HitsoundOnly;
+        fixture.project.export.base_hitsound_diff = true;
+        let plan = fixture.plan();
+        assert!(plan.problems.is_empty(), "{:?}", plan.problems);
+        assert_eq!(plan.diffs.len(), 2);
+        let report = execute(&plan, &fixture.root).unwrap();
+        assert!(report.out_dir.join(BASE).is_file());
+        assert!(report.out_dir.join("audio.wav").is_file());
+        assert!(!fixture.project.mapset_dir.join(BASE).exists());
+        assert_eq!(fs::read_to_string(fixture.map()).unwrap(), MAP);
     }
 
     #[test]

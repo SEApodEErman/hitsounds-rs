@@ -85,6 +85,10 @@
    up every affected file.
 8. **Hitsound-only export** writes a new folder with circles for edge and custom
    tick hits, the generated samples, and the original song when available.
+9. **The base hitsound difficulty** (D-95), when asked for, is planned as one more
+   difficulty: the first difficulty's settings and timing with a circle per base-layer
+   moment. It shares the schema of step 2, goes through steps 3 to 5 with the others,
+   and is written by step 6 or 8.
 
 ## Audio engine
 
@@ -153,7 +157,7 @@ check, menu label and tooltip reads it.
 ├── stems/                # optional stem: an imported copy, or drums.ogg separated in-app (D-73)
 ├── backups/<timestamp>/ # replaced and removed files before direct export
 └── exports/
-    ├── manifest.json    # owned samples and previous slider writes
+    ├── manifest.json    # owned samples, previous slider writes, base hitsound difficulty
     └── hitsound-only/   # separate folder per hitsound-only export
 ```
 

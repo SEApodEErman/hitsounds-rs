@@ -98,6 +98,10 @@ impl Mapset {
             let Ok(file) = entry.file_name().into_string() else {
                 continue;
             };
+            // D-95: a base hitsound difficulty is export output, not one to hitsound.
+            if hs_export::export::is_base_file(&file) {
+                continue;
+            }
             match Difficulty::read(&path) {
                 Ok(Some(diff)) => {
                     out.diffs.insert(file, diff);

@@ -109,6 +109,9 @@ volume at 8 %, so muted ends are very quiet rather than silent (OQ-7).
 - **Direct (default)**: write hitsounds into each enabled diff, after an automatic
   backup into the project folder (D-19).
 - **Hitsound-only `.osu`**: one file per diff, for anyone who prefers copying by hand.
+- **Base hitsound difficulty** (D-95): one extra difficulty with a circle on every
+  base-layer hit, to copy into every diff with Hitsound Copier, as hitsounding was done
+  before. It can be written alone or with either mode above.
 - Export renders the **mapset-wide** sample files, runs the ranking checks (≥ 25 ms,
   peak ≤ 5 ms, 44-byte blank for silence), writes the files, verifies them, and
   removes stale files that hitsounds-rs itself wrote earlier.

@@ -175,6 +175,10 @@ pub struct ExportSettings {
     /// mapper's own (D-80).
     #[serde(default = "yes")]
     pub remove_redundant_greenlines: bool,
+    /// Also write the base layer as one hitsound difficulty, a circle per moment, for
+    /// copying to the difficulties with Hitsound Copier (D-95).
+    #[serde(default)]
+    pub base_hitsound_diff: bool,
 }
 
 fn one() -> u32 {
@@ -205,6 +209,7 @@ impl Default for ExportSettings {
             single_format: SampleFormat::Wav16,
             mixed_format: SampleFormat::Wav16,
             remove_redundant_greenlines: true,
+            base_hitsound_diff: false,
         }
     }
 }

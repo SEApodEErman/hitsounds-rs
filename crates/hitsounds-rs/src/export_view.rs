@@ -25,6 +25,8 @@ pub struct ExportReview {
 struct Difficulty {
     file: String,
     label: String,
+    /// The base hitsound difficulty (D-95).
+    base: bool,
     stats: DiffStats,
 }
 
@@ -46,6 +48,7 @@ impl ExportReview {
                 .map(|d| Difficulty {
                     file: d.file.clone(),
                     label: d.label.clone(),
+                    base: d.base,
                     stats: d.stats.clone(),
                 })
                 .collect(),
@@ -310,26 +313,27 @@ impl ExportPage {
     }
 
     fn preview(&self, ui: &mut Ui, plan: &ExportReview, busy: Option<&str>, emit: views::Emit<'_>) {
+        let count = plan.diffs.iter().filter(|d| !d.base).count();
+        let base = plan.diffs.iter().any(|d| d.base);
         ui.horizontal_wrapped(|ui| {
             ui.label(t::display("Review", t::HEADING_SIZE));
-            widgets::tag(ui, format!("{} difficulties", plan.diffs.len()), t::ACCENT);
-            widgets::tag(ui, format!("{} samples", plan.samples.len()), t::MUTED);
+            widgets::tag(ui, plural(count, "difficulty", "difficulties"), t::ACCENT);
+            if base {
+                widgets::tag(ui, "Base hitsound difficulty", t::DIFFICULTY);
+            }
+            widgets::tag(
+                ui,
+                plural(plan.samples.len(), "sample", "samples"),
+                t::MUTED,
+            );
         });
         ui.add_enabled_ui(busy.is_none() && self.can_write(), |ui| {
-            let count = plan.diffs.len();
-            let suffix = if count == 1 {
-                "difficulty"
-            } else {
-                "difficulties"
-            };
-            let label = match plan.mode {
-                WriteMode::Direct => format!("Back up and write {count} {suffix}"),
-                WriteMode::HitsoundOnly => format!(
-                    "Write {count} hitsound-only {}",
-                    if count == 1 { "copy" } else { "copies" }
-                ),
-            };
-            if t::primary(ui, (t::icon(icons::EXPORT), label)).clicked() {
+            if t::primary(
+                ui,
+                (t::icon(icons::EXPORT), write_label(plan.mode, count, base)),
+            )
+            .clicked()
+            {
                 emit(Intent::Job(Job::WriteExport));
             }
         });
@@ -360,8 +364,14 @@ impl ExportPage {
                     } else {
                         String::new()
                     };
-                    ui.label(t::muted(format!("{} objects changed  ·  {} → {} greenlines{removed}", s.objects_changed, s.greenlines_before, s.greenlines_after)));
-                    ui.label(t::meta(format!("{} matched  ·  {} fallback  ·  {} muted  ·  {} empty  ·  {} orphaned", s.matched, s.fallback, s.muted, s.empty, s.orphaned), t::DIM));
+                    if diff.base {
+                        // Every circle carries a hit, so the projection counts say nothing.
+                        ui.label(t::meta(&diff.file, t::DIM));
+                        ui.label(t::muted(format!("{} circles, one per base-layer moment  ·  {} greenlines", s.edges, s.greenlines_after)));
+                    } else {
+                        ui.label(t::muted(format!("{} objects changed  ·  {} → {} greenlines{removed}", s.objects_changed, s.greenlines_before, s.greenlines_after)));
+                        ui.label(t::meta(format!("{} matched  ·  {} fallback  ·  {} muted  ·  {} empty  ·  {} orphaned", s.matched, s.fallback, s.muted, s.empty, s.orphaned), t::DIM));
+                    }
                     if s.ticks > 0 || s.slider_bodies > 0 {
                         ui.label(t::muted(format!("{} custom ticks  ·  {} slider body overrides", s.ticks, s.slider_bodies)));
                     }
@@ -447,6 +457,22 @@ fn options(ui: &mut Ui, options: &mut ExportSettings, included: &mut [Included])
         widgets::help(
             ui,
             "Difficulties left out are not touched and keep their hitsounds. The same switch is in each difficulty's Rules.",
+        );
+        // D-95: the base layer as one hitsound difficulty, the way hitsounds were made
+        // before tools wrote into every difficulty.
+        ui.add_space(t::SMALL);
+        ui.label(t::meta("Also write", t::DIM));
+        ui.checkbox(&mut options.base_hitsound_diff, "Base hitsound difficulty");
+        widgets::help(
+            ui,
+            match options.write_mode {
+                WriteMode::Direct => {
+                    "An extra difficulty in the mapset with a circle on every base-layer hit. Copy it into your difficulties with Mapping Tools' Hitsound Copier."
+                }
+                WriteMode::HitsoundOnly => {
+                    "An extra difficulty with a circle on every base-layer hit, in the export folder. Copy it into your difficulties with Mapping Tools' Hitsound Copier."
+                }
+            },
         );
     });
     // D-69: the file type of generated samples, as in Mapping Tools' Hitsound Studio.
@@ -544,6 +570,29 @@ fn options(ui: &mut Ui, options: &mut ExportSettings, included: &mut [Included])
             );
         }
     });
+}
+
+fn plural(count: usize, one: &str, many: &str) -> String {
+    format!("{count} {}", if count == 1 { one } else { many })
+}
+
+/// The write button names what it will do (§5.7).
+fn write_label(mode: WriteMode, count: usize, base: bool) -> String {
+    let diffs = match mode {
+        WriteMode::Direct => format!(
+            "Back up and write {}",
+            plural(count, "difficulty", "difficulties")
+        ),
+        WriteMode::HitsoundOnly => format!(
+            "Write {}",
+            plural(count, "hitsound-only copy", "hitsound-only copies")
+        ),
+    };
+    match (count, base) {
+        (0, true) => "Write the base hitsound difficulty".into(),
+        (_, true) => format!("{diffs} and the base hitsound difficulty"),
+        _ => diffs,
+    }
 }
 
 /// How the hitnormal under a lone addition is described in Project settings and Export
@@ -649,6 +698,7 @@ mod tests {
     fn comparison_keeps_only_changed_lines_and_uses_their_source_numbers() {
         let diff = DiffExport {
             file: "hard.osu".into(),
+            base: false,
             out_file: "hard.osu".into(),
             label: "Hard".into(),
             original: "osu file format v14\r\n[TimingPoints]\r\n0,500,4,1,0,80,1,0\r\n[HitObjects]\r\n".into(),
@@ -684,6 +734,7 @@ mod tests {
             diffs: vec![Difficulty {
                 file: "hard.osu".into(),
                 label: "Hard".into(),
+                base: false,
                 stats: DiffStats::default(),
             }],
             samples: vec![],
@@ -696,6 +747,26 @@ mod tests {
         assert!(!page.can_write());
         assert!(
             matches!(page.build(&ctx, 1.0), Some(Job::BuildExport(request)) if request.settings.write_mode == WriteMode::HitsoundOnly)
+        );
+    }
+
+    #[test]
+    fn write_button_names_the_base_hitsound_difficulty() {
+        assert_eq!(
+            write_label(WriteMode::Direct, 1, false),
+            "Back up and write 1 difficulty"
+        );
+        assert_eq!(
+            write_label(WriteMode::Direct, 3, true),
+            "Back up and write 3 difficulties and the base hitsound difficulty"
+        );
+        assert_eq!(
+            write_label(WriteMode::HitsoundOnly, 0, true),
+            "Write the base hitsound difficulty"
+        );
+        assert_eq!(
+            write_label(WriteMode::HitsoundOnly, 2, false),
+            "Write 2 hitsound-only copies"
         );
     }
 

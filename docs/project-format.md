@@ -83,7 +83,8 @@ folder unless absolute.
     "mute_slider_ticks": false,
     "single_format": "wav16",                   // or "source", "wav_float", "ogg" (D-69)
     "mixed_format": "wav16",                    // "wav16", "wav_float" or "ogg"
-    "remove_redundant_greenlines": true          // D-80
+    "remove_redundant_greenlines": true,         // D-80
+    "base_hitsound_diff": false                  // D-95: also write the base layer as one hitsound difficulty
   },
   "next_channel_id": 7,
   "schema": []                                 // custom indices saved after a direct export

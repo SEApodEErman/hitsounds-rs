@@ -192,7 +192,8 @@ Export becomes a full view instead of a dialog over the editor.
 
 - **Left: options, grouped and explained.** *Where to write* as two choices with one
   line each (into the mapset, with backups; or hitsound-only copies). Then *What to
-  export*, a checkbox per difficulty (D-94). Then *Indices*
+  export*, a checkbox per difficulty (D-94) and *Also write: Base hitsound difficulty*
+  (D-95). Then *Indices*
   (first custom index, first tick index), *Mixing* (grouping, silent hitnormal), and
   *Checks and cleanup* (auto-fix, schema growth, blank slides and ticks, take over
   existing samples).
@@ -434,6 +435,12 @@ Current state:
   the field opening with the value selected and no ramp/step switch, Esc closing it
   without an edit. Typing into the field is covered by an editor test, since the QA
   hook sends no text.
+- **2026-11-15, export choices (D-94, D-95):** Export lists every difficulty with a
+  checkbox, and can also write the base layer as one hitsound difficulty for Hitsound
+  Copier. **Checked on screen** with the synthetic demo at 1440 × 860: leaving Hard out
+  and adding the base difficulty rebuilt the preview and renamed the write button; the
+  written file landed in the mapset, and the editor's layer strip did not list it.
+  **Not checked** in osu! or with Hitsound Copier.
 - **Debug-only QA hooks** in `app.rs` and `main.rs`: `HITSOUNDS_RS_QA_INPUT` (a file with
   one pointer, key or wheel event per write), `HITSOUNDS_RS_QA_CAPTURE` (a file naming the
   PNG to write) and `HITSOUNDS_RS_QA_SIZE` (`960x600`). They are compiled out of release

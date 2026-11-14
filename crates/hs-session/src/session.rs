@@ -1029,4 +1029,24 @@ mod tests {
         );
         assert_eq!(session.project.mapset_dir, real);
     }
+
+    #[test]
+    fn a_base_hitsound_difficulty_is_not_a_difficulty_to_hitsound() {
+        let root = tempfile::tempdir().unwrap();
+        // D-95: the export's own output, sorting before the real difficulty.
+        let dir = mapset(
+            root.path(),
+            "1 A - B",
+            &["Hitsounds (base layer)", "Insane"],
+        );
+        let session =
+            Session::create(Arc::new(|_| {}), &dir, &root.path().join("p"), None).unwrap();
+        let files: Vec<_> = session
+            .project
+            .diffs
+            .iter()
+            .map(|d| d.file.as_str())
+            .collect();
+        assert_eq!(files, ["A - B (me) [Insane].osu"]);
+    }
 }
