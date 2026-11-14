@@ -337,6 +337,17 @@ fn menus(ui: &mut Ui, shell: &Shell<'_>, emit: Emit<'_>) {
             emit(Intent::Editor(Act::DeleteSelection));
         }
         ui.separator();
+        if item(ui, "Cut selected hits", "Ctrl+X", selected) {
+            emit(Intent::Editor(Act::Cut));
+        }
+        if item(ui, "Copy selected hits", "Ctrl+C", selected) {
+            emit(Intent::Editor(Act::Copy));
+        }
+        let copied = editor.is_some_and(|status| status.copied > 0);
+        if item(ui, "Paste at the playhead", "Ctrl+V", editing && copied) {
+            emit(Intent::Editor(Act::Paste));
+        }
+        ui.separator();
         let channel = editor.and_then(|status| status.channel);
         if item(ui, "Place hit at the playhead", "Enter", channel.is_some()) {
             emit(Intent::Editor(Act::PlaceAtPlayhead));
@@ -1492,15 +1503,17 @@ fn help(ui: &mut Ui) {
                 ("Place at the playhead", "Enter"),
                 ("Delete the selection", "Delete"),
                 ("Select all / clear selection", "Ctrl+A / Esc"),
+                ("Copy / cut the selection", "Ctrl+C / Ctrl+X"),
+                ("Paste at the playhead", "Ctrl+V"),
             ][..],
         ),
         (
             "Tools",
             &[
-                ("Draw: place and move", "P"),
-                ("Paint: drag to fill every snap step", "B"),
-                ("Erase: click or drag over hits", "D"),
-                ("Select: box select only", "E"),
+                ("Select: box select only", "1"),
+                ("Draw: place and move", "2"),
+                ("Paint: drag to fill every snap step", "3"),
+                ("Delete: click or drag over hits", "4"),
             ],
         ),
         (
@@ -1529,9 +1542,10 @@ fn help(ui: &mut Ui) {
         (
             "Hit volume",
             &[
-                ("Add or move a point", "Click or drag"),
+                ("Add a point", "Ctrl+click"),
+                ("Move a point", "Drag it"),
+                ("Switch ramp and step", "Click a point"),
                 ("Delete a point", "Right-click it"),
-                ("Switch ramp and step", "Ctrl+click a segment"),
             ],
         ),
         (

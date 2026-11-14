@@ -133,6 +133,13 @@ Separate the drum stem inside the app instead of importing one from a website.
   animations on and off.
 - [ ] Listen in game to an export where empty objects stayed on a custom index (D-81).
 
+## Tester feedback (2026-11-14)
+- [x] Tools reordered to Select, Draw, Paint, Delete on keys 1–4 (D-86).
+- [x] Listening levels take a typed value (D-87).
+- [x] Copy, cut and paste of hits at the playhead, replacing the pasted span (D-88).
+- [x] Hit volume lane: Ctrl+click adds a point, a click on a point switches ramp and step (D-89).
+- [ ] Check all four on screen in a real mapset.
+
 ## Alpha release (D-84, D-85)
 - [x] Background update check, download and checksum, applied on exit (installer or
   portable swap), *Restart now* toast and App settings section (D-84). Unit tests for
@@ -145,7 +152,7 @@ Separate the drum stem inside the app instead of importing one from a website.
 - [ ] Code signing before a wider release.
 
 ## Later (post-MVP)
-- Loop range, copy/paste of hits, tap-to-record (D-53).
+- Loop range, tap-to-record (D-53). Copy/paste of hits is done (D-88).
 - Opt-in storyboard-sample fallback (D-06).
 - OGG export for gameplay sounds; audibility lint.
 - osu!lazer support.

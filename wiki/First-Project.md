@@ -38,18 +38,23 @@ Tools:
 
 | Tool | Key | What it does |
 |---|---|---|
-| Draw | **P** | Click a step to place a hit; drag a hit to move it in time or to another channel; drag on empty space to select. Right-click deletes. |
-| Paint | **B** | Drag to fill every step of one channel. |
-| Erase | **D** | Drag across hits to delete them. |
-| Select | **E** | Box-select and move, without placing. |
+| Select | **1** | Box-select and move, without placing. |
+| Draw | **2** | Click a step to place a hit; drag a hit to move it in time or to another channel; drag on empty space to select. Right-click deletes. |
+| Paint | **3** | Drag to fill every step of one channel. |
+| Delete | **4** | Drag across hits to delete them. |
+
+**Ctrl+C** copies the selected hits and **Ctrl+X** cuts them. **Ctrl+V** pastes them at
+the playhead: on the channels you copied from, the pasted hits replace whatever was in
+that stretch, and they stay selected so you can drag them into place. One **Ctrl+Z**
+puts back what was there.
 
 Navigation works as in the osu! editor: the mouse wheel seeks by the snap, **Alt+wheel**
 zooms, **Ctrl+wheel** changes the snap divisor. **Space** plays and pauses,
 **Ctrl+Z** undoes, **Ctrl+S** saves.
 
-The **Hit volume** lane under the waveform is a volume curve for every hit: click to add
-a point, drag to move it, right-click to delete, **Ctrl+click** a segment to switch
-between a ramp and a step.
+The **Hit volume** lane under the waveform is a volume curve for every hit:
+**Ctrl+click** to add a point, drag a point to move it, click a point to switch the
+segment after it between a ramp and a step, right-click to delete.
 
 ## 4. Check each difficulty
 
@@ -74,6 +79,7 @@ slider settings.
 
 The **Mixer** (**F9**) has a strip per channel and the listening levels. **Master**,
 **Music** and **Effects** only change what you hear; they never change the export.
+Click a level's percentage to type a value.
 Channel volume does: at each hit, the loudest channel playing, scaled by the
 **Hit volume** curve, sets the greenline volume.
 

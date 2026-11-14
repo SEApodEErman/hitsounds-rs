@@ -781,7 +781,7 @@ impl Studio {
             if i.consume_key(Modifiers::CTRL, Key::E) {
                 return Some(Intent::OpenExport);
             }
-            // D-61: FL Studio's function keys for the docks and its letter keys for the tools.
+            // D-61: FL Studio's function keys for the docks; D-86: number keys for the tools.
             for (key, panel) in [
                 (Key::F6, Panel::Channel),
                 (Key::F7, Panel::Review),
@@ -792,13 +792,8 @@ impl Studio {
                     return Some(Intent::Editor(Act::Toggle(panel)));
                 }
             }
-            for (key, tool) in [
-                (Key::P, Tool::Draw),
-                (Key::B, Tool::Paint),
-                (Key::D, Tool::Erase),
-                (Key::E, Tool::Select),
-            ] {
-                if i.consume_key(Modifiers::NONE, key) {
+            for tool in Tool::ALL {
+                if i.consume_key(Modifiers::NONE, tool.key()) {
                     return Some(Intent::Editor(Act::Tool(tool)));
                 }
             }

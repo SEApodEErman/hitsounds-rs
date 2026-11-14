@@ -320,9 +320,27 @@ fn listening(ui: &mut Ui, levels: &Levels, height: f32, ready: bool, emit: Emit<
                     .key("Double-click", "Reset"),
             );
         }
+        // D-87: the readout takes a typed value as well as the fader.
+        let (readout, typed) = widgets::percent_entry(
+            ui,
+            Rect::from_center_size(pos2(centre, foot + 9.0), vec2(LEVEL_COLUMN - 6.0, 16.0)),
+            Id::new(("listening-value", i)),
+            shown,
+            if silent { t::DIM } else { t::MUTED },
+        );
+        readout.widget_info(|| {
+            WidgetInfo::labeled(WidgetType::TextEdit, ready, format!("{name} volume value"))
+        });
+        if readout.contains_pointer() {
+            widgets::hint(
+                ui.ctx(),
+                Hint::new(format!("{name} volume {:.0}%", shown * 100.0))
+                    .key("Click", "Type a value"),
+            );
+        }
         if ready {
             let mut next = *levels;
-            if let Some(v) = commit {
+            if let Some(v) = commit.or(typed.filter(|v| (v - value).abs() > 0.0005)) {
                 set(&mut next, v);
                 emit(Intent::Job(Job::Levels(next)));
             } else if fader.dragged() && (shown - value).abs() > 0.0005 {
@@ -330,13 +348,6 @@ fn listening(ui: &mut Ui, levels: &Levels, height: f32, ready: bool, emit: Emit<
                 emit(Intent::PreviewLevels(next));
             }
         }
-        p.text(
-            pos2(centre, foot + 3.0),
-            Align2::CENTER_TOP,
-            format!("{:.0}%", shown * 100.0),
-            FontId::monospace(t::META_SIZE),
-            if silent { t::DIM } else { t::MUTED },
-        );
         let Some(on) = muted else { continue };
         let cell = Rect::from_center_size(pos2(centre, foot + 26.0), vec2(26.0, 16.0));
         let button = toggle(

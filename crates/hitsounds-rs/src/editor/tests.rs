@@ -14,8 +14,8 @@ use eframe::egui::{
 };
 use egui_kittest::{Harness, kittest::Queryable};
 use hs_core::{
-    Channel, Curve, DiffProfile, DiffTimeline, Edge, EdgeKind, Project, Target, TickPolicy,
-    projection::Tick,
+    Channel, Curve, DiffProfile, DiffTimeline, Edge, EdgeKind, Edit, History, Project, Target,
+    TickPolicy, projection::Tick,
 };
 use hs_session::{Clock, Transport, Waveform};
 use osu_format::{Hitsound, SampleSet};
@@ -27,6 +27,8 @@ struct Fixture {
     clock: Clock,
     imported: Vec<(Option<u32>, PathBuf)>,
     transport: Vec<Transport>,
+    /// Every edit the timeline sent, in order: one entry is one undo step.
+    edits: Vec<Edit>,
     body: Rect,
 }
 
@@ -75,6 +77,7 @@ impl Fixture {
             },
             imported: Vec::new(),
             transport: Vec::new(),
+            edits: Vec::new(),
             body: Rect::NOTHING,
         }
     }
@@ -130,22 +133,8 @@ impl Fixture {
         for intent in intents {
             match intent {
                 Intent::Job(Job::Edit(edit)) => {
-                    self.view.project.apply(&edit).unwrap();
-                    let file = self.view.layer.file.as_deref();
-                    let diff = file.and_then(|f| self.view.project.diff(f));
-                    let events = diff.map(|d| d.apply_overrides(self.view.project.base_events()));
-                    let objects = self.view.layer.objects.as_ref().map(|o| &o.timeline);
-                    let projection = objects.zip(diff).map(|(objects, diff)| {
-                        hs_core::projection::project(&self.view.project, diff, objects)
-                    });
-                    self.view.layer = Layer::new(
-                        &self.view.project,
-                        file,
-                        self.view.layer.grid.clone(),
-                        events.as_deref(),
-                        objects.zip(projection.as_ref()),
-                    );
-                    self.timeline.adopt(&self.view);
+                    self.apply(&edit);
+                    self.edits.push(edit);
                 }
                 Intent::Job(Job::UseSample {
                     channel,
@@ -163,6 +152,26 @@ impl Fixture {
                 _ => {}
             }
         }
+    }
+
+    /// Applies an edit as the session would and rebuilds the layer from it.
+    fn apply(&mut self, edit: &Edit) {
+        self.view.project.apply(edit).unwrap();
+        let file = self.view.layer.file.as_deref();
+        let diff = file.and_then(|f| self.view.project.diff(f));
+        let events = diff.map(|d| d.apply_overrides(self.view.project.base_events()));
+        let objects = self.view.layer.objects.as_ref().map(|o| &o.timeline);
+        let projection = objects.zip(diff).map(|(objects, diff)| {
+            hs_core::projection::project(&self.view.project, diff, objects)
+        });
+        self.view.layer = Layer::new(
+            &self.view.project,
+            file,
+            self.view.layer.grid.clone(),
+            events.as_deref(),
+            objects.zip(projection.as_ref()),
+        );
+        self.timeline.adopt(&self.view);
     }
 
     fn geometry(&self) -> Geometry {
@@ -398,12 +407,19 @@ fn place_select_move_and_delete_through_timeline() {
 }
 
 #[test]
-fn volume_points_move_toggle_ramp_and_delete() {
+fn volume_points_need_ctrl_to_add_and_a_click_switches_ramp_and_step() {
     let mut h = harness(Fixture::new(2));
     let a = h.state().volume(500.0, 80.0);
     let b = h.state().volume(1250.0, 60.0);
+    // D-89: a plain click on the lane adds nothing.
     click(&mut h, a, PointerButton::Primary, Modifiers::NONE);
-    click(&mut h, b, PointerButton::Primary, Modifiers::NONE);
+    assert!(h.state().view.project.volume.points.is_empty());
+    assert!(h.state().edits.is_empty());
+    click(&mut h, a, PointerButton::Primary, Modifiers::CTRL);
+    click(&mut h, b, PointerButton::Primary, Modifiers::CTRL);
+    assert_eq!(h.state().view.project.volume.points.len(), 2);
+    let empty = h.state().volume(2000.0, 50.0);
+    click(&mut h, empty, PointerButton::Primary, Modifiers::NONE);
     assert_eq!(h.state().view.project.volume.points.len(), 2);
     let destination = h.state().volume(1000.0, 40.0);
     drag(&mut h, b, destination);
@@ -414,12 +430,21 @@ fn volume_points_move_toggle_ramp_and_delete() {
         ),
         (1000, 40)
     );
-    let between = h.state().volume(750.0, 60.0);
-    click(&mut h, between, PointerButton::Primary, Modifiers::CTRL);
+    // Dragging a point never switches its curve.
+    assert_eq!(h.state().view.project.volume.points[0].curve, Curve::Linear);
+    click(&mut h, a, PointerButton::Primary, Modifiers::NONE);
     assert_eq!(h.state().view.project.volume.points[0].curve, Curve::Step);
+    assert_eq!(h.state().view.project.volume.points.len(), 2);
+    let between = h.state().volume(750.0, 60.0);
     h.hover_at(between);
     h.step();
     assert!(h.state().timeline.hover.contains("Volume 80%"));
+    click(&mut h, a, PointerButton::Primary, Modifiers::NONE);
+    assert_eq!(h.state().view.project.volume.points[0].curve, Curve::Linear);
+    // The last point's curve leads nowhere, so a click on it changes nothing.
+    let edits = h.state().edits.len();
+    click(&mut h, destination, PointerButton::Primary, Modifiers::NONE);
+    assert_eq!(h.state().edits.len(), edits);
     click(
         &mut h,
         destination,
@@ -427,6 +452,133 @@ fn volume_points_move_toggle_ramp_and_delete() {
         Modifiers::NONE,
     );
     assert_eq!(h.state().view.project.volume.points.len(), 1);
+}
+
+#[test]
+fn paste_replaces_the_span_at_the_playhead_as_one_undo_step() {
+    let mut h = harness(Fixture::new(2));
+    // Track 1 has 500 and 1000, Track 2 has 500 and 1125.
+    h.state_mut().apply(&Edit::AddEvents {
+        diff: None,
+        events: vec![(1, 4250), (1, 4700), (2, 4250)],
+    });
+    h.state_mut().timeline.selection = [(1, 500), (1, 1000)].into();
+    h.event(Event::Copy);
+    h.step();
+    assert_eq!(h.state().timeline.clipboard_len(), 2);
+    // Copying edits nothing.
+    assert!(h.state().edits.is_empty());
+
+    let before = h.state().view.project.clone();
+    // Off the grid: the paste lands on the snapped playhead, as Enter does.
+    h.state_mut().clock.position_ms = 4003.0;
+    h.state_mut().timeline.selection.clear();
+    h.event(Event::Paste("anything".into()));
+    h.step();
+    let lanes = &h.state().view.layer.lanes;
+    // 4250 sat inside the pasted span on a pasted channel, so it is replaced; 4700 is
+    // past the span's end and stays.
+    assert_eq!(lanes[0].hits, [500, 1000, 4000, 4500, 4700]);
+    // Track 2 holds nothing in the clipboard, so its hits stay.
+    assert_eq!(lanes[1].hits, [500, 1125, 4250]);
+    assert_eq!(h.state().timeline.selection, [(1, 4000), (1, 4500)].into());
+    assert_eq!(h.state().edits.len(), 1, "a paste is one undo step");
+
+    // Undo restores exactly what was there.
+    let mut history = History::default();
+    let mut project = h.state().view.project.clone();
+    history.record(before.clone());
+    assert!(history.undo(&mut project));
+    assert_eq!(project, before);
+
+    // The pasted hits are selected, so a drag moves the whole paste.
+    let from = h.state().lane(0, 4000.0);
+    let to = h.state().lane(0, 4250.0);
+    drag(&mut h, from, to);
+    assert_eq!(
+        h.state().view.layer.lanes[0].hits,
+        [500, 1000, 4250, 4700, 4750]
+    );
+}
+
+#[test]
+fn cut_and_paste_through_the_menu_acts_and_into_a_difficulty() {
+    let mut h = harness(Fixture::new(1).diff());
+    let base = h.state().view.project.base_events().collect::<Vec<_>>();
+    h.state_mut().timeline.selection = [(1, 750)].into();
+    {
+        let state = h.state_mut();
+        let mut intents = Vec::new();
+        state
+            .timeline
+            .cut_selection(&state.view, &mut |intent| intents.push(intent));
+        for intent in intents {
+            if let Intent::Job(Job::Edit(edit)) = intent {
+                state.apply(&edit);
+            }
+        }
+    }
+    assert!(!h.state().view.layer.contains(&(1, 750)));
+    assert_eq!(h.state().timeline.clipboard_len(), 1);
+    h.state_mut().clock.position_ms = 2000.0;
+    h.event(Event::Paste(String::new()));
+    h.step();
+    assert!(h.state().view.layer.contains(&(1, 2000)));
+    // In a difficulty a paste is overrides; the base layer is untouched (D-17).
+    assert_eq!(h.state().view.project.base_events().collect::<Vec<_>>(), base);
+}
+
+#[test]
+fn listening_levels_take_a_typed_value() {
+    let fixture = Fixture::new(1);
+    let levels = hs_session::Levels {
+        master: 1.0,
+        ..Default::default()
+    };
+    let sent = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let log = sent.clone();
+    let mut h = Harness::builder()
+        .with_size(vec2(900.0, 260.0))
+        .build_ui(move |ui| {
+            super::mixer::show(
+                ui,
+                &fixture.view,
+                &levels,
+                None,
+                &fixture.clock,
+                true,
+                &mut |intent| {
+                    if let Intent::Job(Job::Levels(levels)) = intent {
+                        log.borrow_mut().push(levels);
+                    }
+                },
+            );
+        });
+    h.step();
+    let value = h.get_by_label("Master volume value").rect().center();
+    h.hover_at(value);
+    h.event(Event::PointerButton {
+        pos: value,
+        button: PointerButton::Primary,
+        pressed: true,
+        modifiers: Modifiers::NONE,
+    });
+    h.event(Event::PointerButton {
+        pos: value,
+        button: PointerButton::Primary,
+        pressed: false,
+        modifiers: Modifiers::NONE,
+    });
+    h.run_steps(3);
+    // The old value is selected, so typing replaces it.
+    h.event(Event::Text("45%".into()));
+    h.step();
+    h.key_press(Key::Enter);
+    h.run_steps(3);
+    let sent = sent.borrow();
+    assert_eq!(sent.len(), 1, "one level change: {sent:?}");
+    assert!((sent[0].master - 0.45).abs() < 1e-6, "{:?}", sent[0]);
+    assert_eq!(sent[0].music, levels.music);
 }
 
 #[test]
@@ -542,15 +694,15 @@ fn paint_tool_fills_every_snap_step_of_one_channel() {
 }
 
 #[test]
-fn erase_tool_deletes_the_hits_it_is_dragged_across() {
+fn delete_tool_deletes_the_hits_it_is_dragged_across() {
     let mut h = harness(Fixture::new(2));
-    h.state_mut().timeline.tool = Tool::Erase;
+    h.state_mut().timeline.tool = Tool::Delete;
     let from = h.state().lane(0, 400.0);
     let to = h.state().lane(0, 1100.0);
     drag(&mut h, from, to);
     assert!(h.state().view.layer.lanes[0].hits.is_empty());
     assert_eq!(h.state().view.layer.lanes[1].hits, [500, 1125]);
-    // A click on empty space with the eraser places nothing.
+    // A click on empty space with the Delete tool places nothing.
     let empty = h.state().lane(1, 3000.0);
     click(&mut h, empty, PointerButton::Primary, Modifiers::NONE);
     assert_eq!(h.state().view.layer.lanes[1].hits, [500, 1125]);

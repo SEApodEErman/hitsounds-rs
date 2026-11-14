@@ -32,48 +32,59 @@ const EDGE_SPEED: f32 = 40.0;
 /// The fastest edge scroll, in points per second.
 const EDGE_MAX_SPEED: f32 = 6000.0;
 
-/// The pointer tools of the timeline, as in FL Studio's playlist (D-62). Right-click
-/// deletes a hit with every tool (D-51).
+/// The pointer tools of the timeline, as in FL Studio's playlist (D-62), in the order
+/// and on the number keys testers asked for (D-86). Right-click deletes a hit with every
+/// tool (D-51).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Tool {
+    /// Never places: drag selects, drag a hit moves it.
+    Select,
     /// Click places, drag on empty space selects, drag a hit moves it (D-47).
     #[default]
     Draw,
     /// Drag to place a hit on every snap step of one channel.
     Paint,
     /// Click or drag across hits to delete them.
-    Erase,
-    /// Never places: drag selects, drag a hit moves it.
-    Select,
+    Delete,
 }
 
 impl Tool {
-    pub const ALL: [Self; 4] = [Self::Draw, Self::Paint, Self::Erase, Self::Select];
+    pub const ALL: [Self; 4] = [Self::Select, Self::Draw, Self::Paint, Self::Delete];
 
     pub fn label(self) -> &'static str {
         match self {
+            Self::Select => "Select",
             Self::Draw => "Draw",
             Self::Paint => "Paint",
-            Self::Erase => "Erase",
-            Self::Select => "Select",
+            Self::Delete => "Delete",
         }
     }
 
     pub fn shortcut(self) -> &'static str {
         match self {
-            Self::Draw => "P",
-            Self::Paint => "B",
-            Self::Erase => "D",
-            Self::Select => "E",
+            Self::Select => "1",
+            Self::Draw => "2",
+            Self::Paint => "3",
+            Self::Delete => "4",
+        }
+    }
+
+    /// The key that picks the tool (D-86).
+    pub fn key(self) -> Key {
+        match self {
+            Self::Select => Key::Num1,
+            Self::Draw => Key::Num2,
+            Self::Paint => Key::Num3,
+            Self::Delete => Key::Num4,
         }
     }
 
     pub fn summary(self) -> &'static str {
         match self {
+            Self::Select => "Select: drag a box around hits, then move, copy or delete them",
             Self::Draw => "Draw: click to place a hit, drag a hit to move it",
             Self::Paint => "Paint: drag to place a hit on every snap step",
-            Self::Erase => "Erase: click or drag across hits to delete them",
-            Self::Select => "Select: drag a box around hits, then move or delete them",
+            Self::Delete => "Delete: click or drag across hits to delete them",
         }
     }
 }
@@ -99,6 +110,12 @@ pub struct Timeline {
     last_position: f64,
     /// Every channel is muted from the mixer (D-77), so no mute light is lit.
     pub all_muted: bool,
+    /// Copied hits as (channel, ms after the earliest copied hit), D-88. It outlives
+    /// layer switches, so hits copy between the base layer and difficulties.
+    clipboard: Vec<Hit>,
+    /// Text for the system clipboard, written on the next frame. Without text there,
+    /// egui-winit sends no paste event for Ctrl+V at all.
+    clipboard_text: Option<String>,
 }
 
 impl Default for Timeline {
@@ -125,6 +142,8 @@ impl Default for Timeline {
             gesture: None,
             context: None,
             last_position: 0.0,
+            clipboard: Vec::new(),
+            clipboard_text: None,
         }
     }
 }
@@ -193,6 +212,9 @@ pub(crate) enum Gesture {
         draft: VolumeEnvelope,
         index: usize,
         changed: bool,
+        /// A plain click on an existing point: released without a drag, it switches
+        /// the point's segment between ramp and step (D-89).
+        toggle: bool,
     },
     /// Scrubbing the playhead. Playback pauses while the button is held, so the audio
     /// does not loop a frame-long slice under a stationary pointer, and resumes on release.
@@ -201,6 +223,13 @@ pub(crate) enum Gesture {
         /// The last time sent, so a held pointer seeks only when it moves.
         last: f64,
     },
+}
+
+#[derive(Clone, Copy)]
+enum Clip {
+    Copy,
+    Cut,
+    Paste,
 }
 
 #[derive(Clone, Copy)]
@@ -445,6 +474,29 @@ impl Timeline {
     }
 
     pub fn keys(&mut self, ctx: &egui::Context, view: &ProjectView, clock: &Clock, emit: Emit<'_>) {
+        // egui-winit turns Ctrl+C / Ctrl+X / Ctrl+V into these events, not key presses.
+        // They work wherever the pointer is, like the other editing shortcuts in app.rs;
+        // the caller already leaves them to a focused text field.
+        let clip = ctx.input_mut(|input| {
+            let mut found = None;
+            input.events.retain(|event| {
+                let clip = match event {
+                    egui::Event::Copy => Clip::Copy,
+                    egui::Event::Cut => Clip::Cut,
+                    egui::Event::Paste(_) => Clip::Paste,
+                    _ => return true,
+                };
+                found = Some(clip);
+                false
+            });
+            found
+        });
+        match clip {
+            Some(Clip::Copy) => self.copy_selection(),
+            Some(Clip::Cut) => self.cut_selection(view, emit),
+            Some(Clip::Paste) => self.paste(view, clock, emit),
+            None => {}
+        }
         let focused = ctx.memory(|memory| memory.has_focus(surface_id()));
         let pressed = ctx.input_mut(|input| {
             if input.consume_key(Modifiers::NONE, Key::Escape) {
@@ -492,6 +544,87 @@ impl Timeline {
         self.selection.clear();
     }
 
+    /// Copies the selection, keeping each hit's channel and its distance from the
+    /// earliest one (D-88).
+    pub fn copy_selection(&mut self) {
+        let Some(range) = self.range() else {
+            return;
+        };
+        self.clipboard = self
+            .selection
+            .iter()
+            .map(|&(id, time)| (id, time - range.start))
+            .collect();
+        let count = self.clipboard.len();
+        self.clipboard_text = Some(format!(
+            "hitsounds-rs: {count} hit{} copied",
+            if count == 1 { "" } else { "s" }
+        ));
+    }
+
+    pub fn cut_selection(&mut self, view: &ProjectView, emit: Emit<'_>) {
+        self.copy_selection();
+        self.delete_selection(view, emit);
+    }
+
+    /// How many hits a paste would place.
+    pub fn clipboard_len(&self) -> usize {
+        self.clipboard.len()
+    }
+
+    /// Pastes the copied hits with the earliest at the snapped playhead (D-88). On each
+    /// channel the clipboard holds, the pasted span replaces what was there: hits
+    /// between the first and last pasted time that are not part of the paste go. It is
+    /// one edit, so one undo puts every replaced hit back. The pasted hits become the
+    /// selection, ready to be dragged into place.
+    pub fn paste(&mut self, view: &ProjectView, clock: &Clock, emit: Emit<'_>) {
+        let at = self.snap(view, clock.position_ms);
+        let pasted: BTreeSet<Hit> = self
+            .clipboard
+            .iter()
+            // A channel deleted since the copy is skipped; ids are never reused.
+            .filter(|(id, _)| view.layer.rows.contains_key(id))
+            .filter_map(|&(id, offset)| Some((id, at.checked_add(offset)?)))
+            .collect();
+        let Some(end) = pasted.iter().map(|&(_, time)| time).max() else {
+            return;
+        };
+        let channels: BTreeSet<ChannelId> = pasted.iter().map(|&(id, _)| id).collect();
+        let replaced: Vec<Hit> = channels
+            .into_iter()
+            .filter_map(|id| Some((id, &view.layer.lanes.get(*view.layer.rows.get(&id)?)?.hits)))
+            .flat_map(|(id, hits)| {
+                hits[grid::visible(hits, f64::from(at), f64::from(end), |time| *time)]
+                    .iter()
+                    .map(move |&time| (id, time))
+            })
+            .filter(|hit| !pasted.contains(hit))
+            .collect();
+        let added: Vec<Hit> = pasted
+            .iter()
+            .copied()
+            .filter(|hit| !view.layer.contains(hit))
+            .collect();
+        let diff = view.layer.file.clone();
+        let mut edits = Vec::new();
+        if !replaced.is_empty() {
+            edits.push(Edit::RemoveEvents {
+                diff: diff.clone(),
+                events: replaced,
+            });
+        }
+        if !added.is_empty() {
+            edits.push(Edit::AddEvents {
+                diff,
+                events: added,
+            });
+        }
+        if !edits.is_empty() {
+            edit(emit, Edit::Batch { edits });
+        }
+        self.selection = pasted;
+    }
+
     pub fn place_at_playhead(&mut self, view: &ProjectView, clock: &Clock, emit: Emit<'_>) {
         if let Some(channel) = self.channel {
             let time = self.snap(view, clock.position_ms);
@@ -523,6 +656,9 @@ impl Timeline {
         reduced: bool,
         emit: Emit<'_>,
     ) {
+        if let Some(text) = self.clipboard_text.take() {
+            ui.ctx().copy_text(text);
+        }
         let (rect, _) = ui.allocate_exact_size(ui.available_size(), Sense::hover());
         let geometry = Geometry::new(rect, view.layer.file.is_some());
         let canvas = Canvas {
@@ -743,7 +879,7 @@ impl Timeline {
                 _ if g.hscroll.contains(point) => CursorIcon::Grab,
                 _ if !g.lanes.contains(point) => CursorIcon::PointingHand,
                 (_, Tool::Paint) => CursorIcon::Crosshair,
-                (_, Tool::Erase) => CursorIcon::NotAllowed,
+                (_, Tool::Delete) => CursorIcon::NotAllowed,
                 _ if on_hit => CursorIcon::Grab,
                 (_, Tool::Draw) => CursorIcon::Crosshair,
                 (_, Tool::Select) => CursorIcon::Default,
@@ -899,7 +1035,7 @@ impl Timeline {
             self.tween = None;
             self.gesture = Some(Gesture::Scroll { grab });
         } else if g.volume.contains(point) {
-            self.begin_volume(view, g, point, time, ctrl, emit);
+            self.begin_volume(view, g, point, time, ctrl);
         } else if g.lanes.contains(point) {
             let row = g.row_at(point.y, self.scroll).unwrap_or(0);
             let Some(channel) = view.project.channels.get(row).map(|c| c.id) else {
@@ -923,7 +1059,7 @@ impl Timeline {
                     });
                     return;
                 }
-                Tool::Erase if !ctrl && !mods.shift => {
+                Tool::Delete if !ctrl && !mods.shift => {
                     self.selection.clear();
                     self.gesture = Some(Gesture::Erase {
                         hits: hit.into_iter().collect(),
@@ -999,25 +1135,21 @@ impl Timeline {
         point: Pos2,
         time: f64,
         ctrl: bool,
-        emit: Emit<'_>,
     ) {
         let mut draft = envelope(view).clone();
         let at = self.volume_point(g, &draft, point);
-        if ctrl {
-            let index = at.or_else(|| {
-                draft
-                    .points
-                    .partition_point(|p| f64::from(p.time) <= time)
-                    .checked_sub(1)
-            });
-            if let Some(i) = index.filter(|&i| i + 1 < draft.points.len()) {
-                let curve = &mut draft.points[i].curve;
-                *curve = if *curve == Curve::Linear {
-                    Curve::Step
-                } else {
-                    Curve::Linear
-                };
-                set_volume(emit, view, draft.points);
+        // D-89: a plain click must not change the curve by accident. It only grabs an
+        // existing point (to drag it, or to switch ramp and step on release); adding a
+        // point takes Ctrl+click.
+        if !ctrl {
+            if let Some(index) = at {
+                self.gesture = Some(Gesture::Volume {
+                    start: point,
+                    draft,
+                    index,
+                    changed: false,
+                    toggle: true,
+                });
             }
             return;
         }
@@ -1048,6 +1180,7 @@ impl Timeline {
             draft,
             index,
             changed,
+            toggle: false,
         });
     }
 
@@ -1141,8 +1274,10 @@ impl Timeline {
                 draft,
                 index,
                 changed,
+                toggle,
             } => {
                 if point.distance(*start) >= t::DRAG_THRESHOLD {
+                    *toggle = false;
                     let time = self.viewport.time(g.plot, point.x);
                     let before = index
                         .checked_sub(1)
@@ -1255,6 +1390,21 @@ impl Timeline {
                 changed: true,
                 ..
             } => set_volume(emit, view, draft.points),
+            Gesture::Volume {
+                mut draft,
+                index,
+                toggle: true,
+                ..
+            } if index + 1 < draft.points.len() => {
+                // The last point's curve leads nowhere, so switching it would change nothing.
+                let curve = &mut draft.points[index].curve;
+                *curve = if *curve == Curve::Linear {
+                    Curve::Step
+                } else {
+                    Curve::Linear
+                };
+                set_volume(emit, view, draft.points);
+            }
             Gesture::Paint { channel, times, .. } => {
                 let events: Vec<Hit> = times
                     .into_iter()
@@ -1384,10 +1534,14 @@ impl Timeline {
                 .key("Drag", "Scroll")
                 .key("Alt+Wheel", "Zoom")
         } else if g.volume.contains(point) {
-            line.key("Click", "Add point")
-                .key("Drag", "Move point")
-                .key("Right-click", "Delete point")
-                .key("Ctrl+Click", "Ramp or step")
+            let on_point = self.volume_point(g, envelope(canvas.view), point).is_some();
+            if on_point {
+                line.key("Click", "Ramp or step")
+                    .key("Drag", "Move point")
+                    .key("Right-click", "Delete point")
+            } else {
+                line.key("Ctrl+Click", "Add point")
+            }
         } else if g.objects.contains(point) {
             line.key("Click", "Select and seek")
                 .key("Right-click", "Add a hit here")
@@ -1408,7 +1562,7 @@ impl Timeline {
                 (Tool::Paint, _) => line
                     .key("Drag", "Paint hits on every snap step")
                     .key("Right-click", "Delete"),
-                (Tool::Erase, _) => line.key("Click or drag", "Delete hits"),
+                (Tool::Delete, _) => line.key("Click or drag", "Delete hits"),
                 (_, true) => line
                     .key("Drag", "Move")
                     .key("Right-click", "Delete")
@@ -1501,7 +1655,7 @@ impl Timeline {
         }
         let row = geo.row_at(point.y, self.scroll)?;
         let lane = view.layer.lanes.get(row)?;
-        if matches!(self.tool, Tool::Erase | Tool::Select) {
+        if matches!(self.tool, Tool::Delete | Tool::Select) {
             return None;
         }
         let time = self.viewport.time(geo.plot, point.x);

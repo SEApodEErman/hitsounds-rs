@@ -320,6 +320,9 @@ pub fn commands(cx: &Offer<'_>) -> Vec<Command> {
         ("Fit the whole song", Act::Fit),
         ("Follow the playhead on or off", Act::Follow),
         ("Select all hits", Act::SelectAll),
+        ("Copy selected hits", Act::Copy),
+        ("Cut selected hits", Act::Cut),
+        ("Paste hits at the playhead", Act::Paste),
     ] {
         list.push(Command::new(
             label,

@@ -102,6 +102,9 @@ pub enum Act {
     SelectAll,
     Deselect,
     DeleteSelection,
+    Copy,
+    Cut,
+    Paste,
     PlaceAtPlayhead,
     Rename(ChannelId),
     Toggle(Panel),
@@ -118,6 +121,8 @@ pub struct Status {
     pub inspector: Option<Tab>,
     pub mixer: bool,
     pub selected: usize,
+    /// Hits waiting to be pasted (D-88).
+    pub copied: usize,
     pub channel: Option<ChannelId>,
 }
 
@@ -206,6 +211,7 @@ impl Editor {
             inspector: self.inspector_open.then_some(self.inspector.tab),
             mixer: self.mixer_open,
             selected: self.timeline.selection.len(),
+            copied: self.timeline.clipboard_len(),
             channel: self.timeline.channel,
         }
     }
@@ -229,6 +235,9 @@ impl Editor {
             Act::SelectAll => self.timeline.select_all(view),
             Act::Deselect => self.timeline.reset_layer(),
             Act::DeleteSelection => self.timeline.delete_selection(view, emit),
+            Act::Copy => self.timeline.copy_selection(),
+            Act::Cut => self.timeline.cut_selection(view, emit),
+            Act::Paste => self.timeline.paste(view, clock, emit),
             Act::PlaceAtPlayhead => self.timeline.place_at_playhead(view, clock, emit),
             Act::Rename(id) => {
                 if let Some(channel) = view.project.channel(id) {
@@ -537,10 +546,10 @@ impl Editor {
 
 fn tool_icon(tool: Tool) -> &'static str {
     match tool {
+        Tool::Select => icons::SELECTION,
         Tool::Draw => icons::PENCIL_SIMPLE,
         Tool::Paint => icons::PAINT_BRUSH,
-        Tool::Erase => icons::ERASER,
-        Tool::Select => icons::SELECTION,
+        Tool::Delete => icons::ERASER,
     }
 }
 

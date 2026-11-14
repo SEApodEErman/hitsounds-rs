@@ -5,8 +5,8 @@
 
 use crate::theme as t;
 use eframe::egui::{
-    Align, Align2, Button, Color32, Context, FontId, Frame, Id, Label, Layout, Margin, Pos2, Rect,
-    Response, RichText, Sense, Shape, Stroke, StrokeKind, Ui, WidgetInfo, WidgetType,
+    self, Align, Align2, Button, Color32, Context, FontId, Frame, Id, Key, Label, Layout, Margin,
+    Pos2, Rect, Response, RichText, Sense, Shape, Stroke, StrokeKind, Ui, WidgetInfo, WidgetType,
     epaint::PathShape, pos2, vec2,
 };
 
@@ -333,6 +333,91 @@ pub fn fader(
     p.rect(cap, 3, fill, t::stroke(t::EDGE_STRONG), StrokeKind::Inside);
     p.hline(cap.shrink2(vec2(4.0, 0.0)).x_range(), y, t::stroke(t::TEXT));
     (response, shown, commit)
+}
+
+/// What a percent readout is being typed into: the draft, and whether the field still
+/// has to take focus (it appears one frame after the click).
+#[derive(Clone)]
+struct Typing {
+    draft: String,
+    focus: bool,
+}
+
+/// A percent readout under a fader that becomes a text field when clicked (D-87).
+/// Enter or clicking away sets the typed value, Esc keeps the old one. Returns the
+/// readout's response and the value typed, from 0 to 1.
+pub fn percent_entry(
+    ui: &mut Ui,
+    rect: Rect,
+    id: Id,
+    shown: f32,
+    color: Color32,
+) -> (Response, Option<f32>) {
+    let field = id.with("field");
+    let font = FontId::monospace(t::META_SIZE);
+    if let Some(mut typing) = ui.data(|data| data.get_temp::<Typing>(id)) {
+        let mut output = egui::TextEdit::singleline(&mut typing.draft)
+            .id(field)
+            .font(font)
+            .horizontal_align(Align::Center)
+            .margin(Margin::symmetric(2, 0))
+            .desired_width(rect.width())
+            .char_limit(5)
+            .show(&mut ui.new_child(egui::UiBuilder::new().max_rect(rect)));
+        let response = output.response.clone();
+        if typing.focus {
+            typing.focus = false;
+            response.request_focus();
+            // Select the old value, so typing replaces it.
+            let all = egui::text::CCursorRange::select_all(&output.galley);
+            output.state.cursor.set_char_range(Some(all));
+            output.state.store(ui.ctx(), field);
+            ui.data_mut(|data| data.insert_temp(id, typing));
+            return (response, None);
+        }
+        let escape = ui.input(|i| i.key_pressed(Key::Escape));
+        if escape || !response.has_focus() {
+            ui.data_mut(|data| data.remove::<Typing>(id));
+            let typed = typing
+                .draft
+                .trim()
+                .trim_end_matches('%')
+                .trim()
+                .parse::<f32>()
+                .ok()
+                .filter(|v| v.is_finite() && !escape)
+                .map(|v| (v.clamp(0.0, 100.0)).round() / 100.0);
+            return (response, typed);
+        }
+        ui.data_mut(|data| data.insert_temp(id, typing));
+        return (response, None);
+    }
+    let response = ui.interact(rect, id, Sense::click());
+    let p = ui.painter();
+    if response.hovered() {
+        p.rect_filled(rect, 3, t::HOVER);
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+    }
+    p.text(
+        rect.center(),
+        Align2::CENTER_CENTER,
+        format!("{:.0}%", shown * 100.0),
+        font,
+        color,
+    );
+    if response.clicked() {
+        ui.data_mut(|data| {
+            data.insert_temp(
+                id,
+                Typing {
+                    draft: format!("{:.0}", shown * 100.0),
+                    focus: true,
+                },
+            );
+        });
+        ui.ctx().request_repaint();
+    }
+    (response, None)
 }
 
 pub struct Segment<'a, T> {

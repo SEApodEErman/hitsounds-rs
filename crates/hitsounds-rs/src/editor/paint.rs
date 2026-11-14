@@ -528,7 +528,7 @@ fn hit_row(
         let key = (channel.id, time);
         let selected = state.selection.contains(&key);
         let doomed = erasing.is_some_and(|hits| hits.contains(&key))
-            || state.tool == Tool::Erase && hovered == Some(key);
+            || state.tool == Tool::Delete && hovered == Some(key);
         let age = canvas.clock.position_ms - f64::from(time);
         let pulse = if !canvas.reduced && canvas.clock.playing && age >= 0.0 {
             (1.0 - age / (t::HIT_PULSE_MS * canvas.clock.rate.max(0.25))).clamp(0.0, 1.0) as f32

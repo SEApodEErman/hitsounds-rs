@@ -60,7 +60,7 @@ toolbar, a channel rack whose lanes are step pads, and docked panels.
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │ ▮ File Edit View Tools Help │ Kick at 01:24.012  [Click] Place hit  [Drag] Select     My Song •  – □ × │ title bar
 ├──────────────────────────────────────────────────────────────────────────────────────┤
-│ ▶ ■  01:23.456 034:2 │ Speed 1.00× Snap 1/4 │ Draw Paint Erase Select │ ↶ ↷     Browser Channel Review Mixer │ Export │ toolbar
+│ ▶ ■  01:23.456 034:2 │ Speed 1.00× Snap 1/4 │ Select Draw Paint Delete │ ↶ ↷     Browser Channel Review Mixer │ Export │ toolbar
 ├──────────────────────────────────────────────────────────────────────────────────────┤
 │ Editing  [Base]  Easy ✓  Normal 2  Hard 7           Hits on the base layer play in every difficulty │ layer strip
 ├───────────┬───────────────────────────┬──────────────────────────────┬───────────────┤
@@ -115,10 +115,13 @@ toolbar, a channel rack whose lanes are step pads, and docked panels.
   away and hits are thin markers.
 - Under the pointer, a **ghost pad** shows where a click will land. The hint bar says
   what click, drag and right-click do with the current tool.
-- **Tools** (D-62): Draw (P) places on click, selects on a drag over empty space and
-  moves hits on a drag; Paint (B) fills every snap step the stroke crosses on the row it
-  began on; Erase (D) deletes what it is clicked or dragged across; Select (E) never
-  places. Right-click deletes a hit with every tool (D-51).
+- **Tools** (D-62, D-86): Select (1) never places; Draw (2) places on click, selects on
+  a drag over empty space and moves hits on a drag; Paint (3) fills every snap step the
+  stroke crosses on the row it began on; Delete (4) deletes what it is clicked or dragged
+  across. Right-click deletes a hit with every tool (D-51).
+- **Copy and paste** (D-88): Ctrl+C / Ctrl+X copy or cut the selection; Ctrl+V pastes it
+  at the snapped playhead, replacing the pasted span on the channels it holds, as one
+  undo step, and selects the pasted hits.
 - Unchanged: Ctrl-click toggles selection, drag hits up/down to change channel, Enter
   places at the playhead, Delete removes the selection, Ctrl+A selects all (D-47), and
   the wheel follows the osu! editor (D-42, D-64).
@@ -213,7 +216,7 @@ Export becomes a full view instead of a dialog over the editor.
 | Feature | Why |
 |---|---|
 | **Loop range**: drag on the ruler, play loops it | Hitsounders replay one section at slow speed all the time |
-| **Copy / paste hits** at the playhead | Choruses repeat; re-placing them by hand is the slowest part |
+| ~~**Copy / paste hits** at the playhead~~ | Built (D-88) |
 | **Tap to record**: while playing, keys 1–9 place a hit on channel 1–9, snapped | Lets you hitsound by playing along, like finger drumming |
 
 Loop range needs a loop point in the audio engine to be sample-accurate. The other
@@ -276,7 +279,8 @@ crates/
    - snap grid and ruler in stable's colours, bar labels when there's room
    - click places, drag selects, Ctrl-click toggles, drag moves in time and across
      channels, right-click deletes, Enter, Delete, Ctrl+A, Escape (D-47)
-   - volume lane: add, drag, right-click delete, Ctrl+click ramp/step, readout (D-44)
+   - volume lane: add, drag, right-click delete, Ctrl+click ramp/step, readout (D-44);
+     since D-89, Ctrl+click adds and a click on a point switches ramp/step
    - objects lane: hit states, ticks, click to select and seek
    - follow playhead, zoom/fit, double-click rename, mute/solo, sample drop (D-45)
 4. **Rail, inspector, library, difficulty panel** with the issue list and timeline
@@ -406,6 +410,11 @@ Current state:
   The picker was checked on screen with a synthetic Songs folder (create, keyboard,
   moved mapset) and against the developer's real install (8,261 mapsets, found through
   the registry).
+- **2026-11-14, tester feedback:** tools reordered to Select, Draw, Paint, Delete on
+  1–4 (D-86); listening levels take a typed value (D-87); copy, cut and paste of hits at
+  the playhead (D-88, `Timeline::paste` in `editor/canvas.rs`); the Hit volume lane adds
+  points only with Ctrl+click, and a click on a point switches ramp and step (D-89).
+  Covered by editor tests; **not yet checked on screen**.
 - **Debug-only QA hooks** in `app.rs` and `main.rs`: `HITSOUNDS_RS_QA_INPUT` (a file with
   one pointer, key or wheel event per write), `HITSOUNDS_RS_QA_CAPTURE` (a file naming the
   PNG to write) and `HITSOUNDS_RS_QA_SIZE` (`960x600`). They are compiled out of release

@@ -26,7 +26,11 @@ try {
     git -C $Work diff --cached --quiet
     if ($LASTEXITCODE -eq 0) { Write-Host 'The wiki is already up to date.'; return }
     $commit = git -C $Root rev-parse --short HEAD
-    git -C $Work commit --quiet -m "Publish wiki from $commit"
+    # Commit as this repository's identity, not the global one: the wiki is public, and
+    # the repository may use a no-reply address the global config doesn't.
+    $name = git -C $Root config user.name
+    $email = git -C $Root config user.email
+    git -C $Work -c "user.name=$name" -c "user.email=$email" commit --quiet -m "Publish wiki from $commit"
     git -C $Work push --quiet
     if ($LASTEXITCODE -ne 0) { throw 'Push failed.' }
     Write-Host "Published the wiki from $commit."
