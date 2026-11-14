@@ -184,7 +184,11 @@ impl Fixture {
     }
 
     fn geometry(&self) -> Geometry {
-        Geometry::new(self.body, self.view.layer.file.is_some())
+        Geometry::new(
+            self.body,
+            self.view.layer.file.is_some(),
+            self.timeline.show_wave,
+        )
     }
     fn x(&self, time: f64) -> f32 {
         self.timeline.viewport.x(self.geometry().plot, time)
@@ -941,4 +945,19 @@ fn frame_budget(fixture: &mut Fixture, fit: bool) {
         samples[samples.len() / 2]
     );
     assert!(p95 < 1000.0 / 144.0, "CPU p95 exceeded the 144 Hz budget");
+}
+
+/// D-92: hiding the waveform shrinks its strip to the Song / Stem switch and gives the
+/// room to the channel lanes; the Hit volume lane keeps its height.
+#[test]
+fn hiding_the_waveform_gives_its_room_to_the_lanes() {
+    let mut h = harness(Fixture::new(4));
+    let shown = h.state().geometry();
+    h.state_mut().timeline.show_wave = false;
+    h.step();
+    let hidden = h.state().geometry();
+    assert_eq!(hidden.wave.height(), theme::WAVE_HIDDEN_HEIGHT);
+    assert_eq!(hidden.volume.height(), shown.volume.height());
+    let gained = theme::WAVE_HEIGHT - theme::WAVE_HIDDEN_HEIGHT;
+    assert_eq!(hidden.lanes.top(), shown.lanes.top() - gained);
 }

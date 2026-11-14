@@ -47,7 +47,17 @@ pub fn timeline(ui: &Ui, state: &Timeline, canvas: &Canvas<'_>, hover: Option<Po
     }
     let steps = ruler(&painter, g, state, view, from, until);
     pads(&lanes, g, state, view, &steps, rows.clone());
-    waveform(&painter, g, state.viewport, view, from, until);
+    if state.show_wave {
+        waveform(&painter, g, state.viewport, view, from, until);
+    } else {
+        painter.with_clip_rect(g.wave).text(
+            pos2(g.plot.left() + t::SPACE, g.wave.center().y),
+            Align2::LEFT_CENTER,
+            "Waveform hidden",
+            FontId::proportional(t::META_SIZE),
+            t::DIM,
+        );
+    }
     let accent = if view.layer.file.is_some() {
         t::DIFFICULTY
     } else {

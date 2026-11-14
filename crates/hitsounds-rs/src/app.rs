@@ -794,6 +794,9 @@ impl Studio {
                     return Some(Intent::Editor(Act::Tool(tool)));
                 }
             }
+            if pressed(i, Action::ToggleWaveform) {
+                return Some(Intent::Editor(Act::Waveform));
+            }
             if project.layer.file.is_some() {
                 if pressed(i, Action::NextIssue) {
                     return Some(Intent::StepIssue { backwards: false });

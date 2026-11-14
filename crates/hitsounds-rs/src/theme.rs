@@ -77,6 +77,8 @@ pub const RAIL_WIDTH: f32 = 304.0;
 pub const COMPACT_RAIL_WIDTH: f32 = 236.0;
 pub const RULER_HEIGHT: f32 = 24.0;
 pub const WAVE_HEIGHT: f32 = 48.0;
+/// The waveform strip with the waveform hidden: just the Song / Stem switch (D-92).
+pub const WAVE_HIDDEN_HEIGHT: f32 = 30.0;
 pub const VOLUME_HEIGHT: f32 = 52.0;
 pub const OBJECTS_HEIGHT: f32 = 28.0;
 pub const TIMELINE_SCROLLBAR: f32 = 10.0;

@@ -53,6 +53,7 @@ pub(super) struct RailState {
     pub selected: Option<ChannelId>,
     pub range: Option<TimeRange>,
     pub follow: bool,
+    pub wave: bool,
 }
 
 impl Rail {
@@ -265,6 +266,13 @@ impl Rail {
                 state.follow,
                 Act::Follow,
             ),
+            (
+                icons::WAVEFORM,
+                "Show the song waveform",
+                keys::label(Action::ToggleWaveform),
+                state.wave,
+                Act::Waveform,
+            ),
         ] {
             let rect = Rect::from_center_size(pos2(x - 11.0, g.ruler.center().y), vec2(22.0, 20.0));
             x -= 24.0;
@@ -286,15 +294,17 @@ impl Rail {
         // Waveform row: which audio you hear behind the hitsounds.
         let stems = view.project.audio.monitor == Monitor::Stems && view.stem_ready;
         title(g.wave, "Listen to", t::TEXT);
-        note(
-            g.wave,
-            if stems {
-                "Drum stem waveform"
-            } else {
-                "Song waveform"
-            },
-            t::DIM,
-        );
+        if state.wave {
+            note(
+                g.wave,
+                if stems {
+                    "Drum stem waveform"
+                } else {
+                    "Song waveform"
+                },
+                t::DIM,
+            );
+        }
         ui.scope_builder(
             UiBuilder::new()
                 .id_salt("monitor-switch")

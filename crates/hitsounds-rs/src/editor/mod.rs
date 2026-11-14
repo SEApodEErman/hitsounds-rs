@@ -105,6 +105,8 @@ pub enum Act {
     ZoomOut,
     Fit,
     Follow,
+    /// Show or hide the song waveform (D-92).
+    Waveform,
     SelectAll,
     Deselect,
     DeleteSelection,
@@ -123,6 +125,7 @@ pub struct Status {
     pub tool: Tool,
     pub divisor: u32,
     pub follow: bool,
+    pub waveform: bool,
     pub browser: bool,
     pub inspector: Option<Tab>,
     pub mixer: bool,
@@ -162,7 +165,11 @@ impl Editor {
                 .unwrap_or(default)
         };
         Self {
-            timeline: Timeline::default(),
+            timeline: {
+                let mut timeline = Timeline::default();
+                timeline.show_wave = flag("waveform-shown", true);
+                timeline
+            },
             inspector: inspector::Inspector::default(),
             library: library::Library::default(),
             browser_open: flag("library-open", true),
@@ -176,12 +183,14 @@ impl Editor {
         storage.set_string("library-open", self.browser_open.to_string());
         storage.set_string("inspector-open", self.inspector_open.to_string());
         storage.set_string("mixer-open", self.mixer_open.to_string());
+        storage.set_string("waveform-shown", self.timeline.show_wave.to_string());
     }
 
     pub fn new_project(&mut self) {
-        let tool = self.timeline.tool;
+        let (tool, show_wave) = (self.timeline.tool, self.timeline.show_wave);
         self.timeline = Timeline::default();
         self.timeline.tool = tool;
+        self.timeline.show_wave = show_wave;
         self.inspector = inspector::Inspector::default();
         self.difficulty = false;
     }
@@ -213,6 +222,7 @@ impl Editor {
             tool: self.timeline.tool,
             divisor: self.timeline.divisor,
             follow: self.timeline.follow,
+            waveform: self.timeline.show_wave,
             browser: self.browser_open,
             inspector: self.inspector_open.then_some(self.inspector.tab),
             mixer: self.mixer_open,
@@ -238,6 +248,7 @@ impl Editor {
             Act::ZoomOut => self.timeline.zoom_center(view, 0.75, now, reduced),
             Act::Fit => self.timeline.fit(view, now, reduced),
             Act::Follow => self.timeline.follow = !self.timeline.follow,
+            Act::Waveform => self.timeline.show_wave = !self.timeline.show_wave,
             Act::SelectAll => self.timeline.select_all(view),
             Act::Deselect => self.timeline.reset_layer(),
             Act::DeleteSelection => self.timeline.delete_selection(view, emit),

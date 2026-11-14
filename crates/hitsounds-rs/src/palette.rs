@@ -315,6 +315,12 @@ pub fn commands(cx: &Offer<'_>) -> Vec<Command> {
             Intent::Editor(Act::Toggle(panel)),
         ));
     }
+    list.push(Command::new(
+        "Show or hide the waveform",
+        keys::label(Action::ToggleWaveform),
+        icons::WAVEFORM,
+        Intent::Editor(Act::Waveform),
+    ));
     for (label, act) in [
         ("Zoom in", Act::ZoomIn),
         ("Zoom out", Act::ZoomOut),

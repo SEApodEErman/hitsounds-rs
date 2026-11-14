@@ -38,6 +38,7 @@ pub enum Action {
     PanelReview,
     PanelBrowser,
     PanelMixer,
+    ToggleWaveform,
     NewProject,
     OpenProject,
     Save,
@@ -53,7 +54,7 @@ pub enum Action {
 
 impl Action {
     /// In the order App settings lists them.
-    pub const ALL: [Self; 29] = [
+    pub const ALL: [Self; 30] = [
         Self::PlayPause,
         Self::GoToStart,
         Self::ToggleMonitor,
@@ -72,6 +73,7 @@ impl Action {
         Self::PanelReview,
         Self::PanelBrowser,
         Self::PanelMixer,
+        Self::ToggleWaveform,
         Self::ScaleUp,
         Self::ScaleDown,
         Self::ScaleReset,
@@ -105,6 +107,7 @@ impl Action {
             Self::PanelReview => "panel_review",
             Self::PanelBrowser => "panel_browser",
             Self::PanelMixer => "panel_mixer",
+            Self::ToggleWaveform => "toggle_waveform",
             Self::NewProject => "new_project",
             Self::OpenProject => "open_project",
             Self::Save => "save",
@@ -139,6 +142,7 @@ impl Action {
             Self::PanelReview => "Difficulty review",
             Self::PanelBrowser => "Browser",
             Self::PanelMixer => "Mixer",
+            Self::ToggleWaveform => "Show or hide the waveform",
             Self::NewProject => "New project",
             Self::OpenProject => "Open project",
             Self::Save => "Save project",
@@ -168,6 +172,7 @@ impl Action {
             | Self::PanelReview
             | Self::PanelBrowser
             | Self::PanelMixer
+            | Self::ToggleWaveform
             | Self::ScaleUp
             | Self::ScaleDown
             | Self::ScaleReset => "View",
@@ -206,6 +211,7 @@ impl Action {
             Self::PanelReview => vec![plain(Key::F7)],
             Self::PanelBrowser => vec![plain(Key::F8)],
             Self::PanelMixer => vec![plain(Key::F9)],
+            Self::ToggleWaveform => Vec::new(),
             Self::NewProject => vec![ctrl(Key::N)],
             Self::OpenProject => vec![ctrl(Key::O)],
             Self::Save => vec![ctrl(Key::S)],

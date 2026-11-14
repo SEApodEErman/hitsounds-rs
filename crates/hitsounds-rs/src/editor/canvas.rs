@@ -99,6 +99,8 @@ pub struct Timeline {
     pub issue: Option<Issue>,
     pub divisor: u32,
     pub follow: bool,
+    /// The song waveform is drawn; hidden, its strip shrinks to the monitor switch (D-92).
+    pub show_wave: bool,
     pub hover: String,
     pub rail: rail::Rail,
     pub(crate) scroll: f32,
@@ -132,6 +134,7 @@ impl Default for Timeline {
             issue: None,
             divisor: 4,
             follow: true,
+            show_wave: true,
             all_muted: false,
             hover: String::new(),
             rail: rail::Rail::default(),
@@ -257,7 +260,7 @@ pub(crate) struct Geometry {
 }
 
 impl Geometry {
-    pub fn new(body: Rect, difficulty: bool) -> Self {
+    pub fn new(body: Rect, difficulty: bool, wave: bool) -> Self {
         let rail_width = if body.width() < 500.0 {
             t::COMPACT_RAIL_WIDTH
         } else {
@@ -276,7 +279,14 @@ impl Geometry {
             )
         };
         let ruler = strip(plot.top(), t::RULER_HEIGHT);
-        let wave = strip(ruler.bottom(), t::WAVE_HEIGHT);
+        let wave = strip(
+            ruler.bottom(),
+            if wave {
+                t::WAVE_HEIGHT
+            } else {
+                t::WAVE_HIDDEN_HEIGHT
+            },
+        );
         let volume = strip(wave.bottom(), t::VOLUME_HEIGHT);
         let objects = strip(
             volume.bottom(),
@@ -664,7 +674,7 @@ impl Timeline {
             ui.ctx().copy_text(text);
         }
         let (rect, _) = ui.allocate_exact_size(ui.available_size(), Sense::hover());
-        let geometry = Geometry::new(rect, view.layer.file.is_some());
+        let geometry = Geometry::new(rect, view.layer.file.is_some(), self.show_wave);
         let canvas = Canvas {
             view,
             clock,
@@ -716,6 +726,7 @@ impl Timeline {
             selected: self.channel,
             range: self.range(),
             follow: self.follow,
+            wave: self.show_wave,
         };
         self.rail.show(ui, &canvas, &rack, emit);
         if max_scroll > 0.0 {

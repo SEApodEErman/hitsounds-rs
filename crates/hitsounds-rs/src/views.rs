@@ -418,6 +418,15 @@ fn menus(ui: &mut Ui, shell: &Shell<'_>, emit: Emit<'_>) {
         ) {
             emit(Intent::Editor(Act::Follow));
         }
+        if check(
+            ui,
+            editor.is_some_and(|status| status.waveform),
+            "Show the waveform",
+            keys::label(Action::ToggleWaveform),
+            editing,
+        ) {
+            emit(Intent::Editor(Act::Waveform));
+        }
         ui.separator();
         ui.add_enabled_ui(editing, |ui| {
             submenu(ui, "Layer", |ui| {
@@ -1851,6 +1860,7 @@ fn help(ui: &mut Ui) {
                 ("Difficulty review", k(Action::PanelReview)),
                 ("Browser", k(Action::PanelBrowser)),
                 ("Mixer", k(Action::PanelMixer)),
+                ("Show or hide the waveform", k(Action::ToggleWaveform)),
                 ("Export", k(Action::Export)),
                 ("Command palette", k(Action::Palette)),
                 (

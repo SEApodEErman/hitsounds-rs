@@ -415,6 +415,15 @@ Current state:
   the playhead (D-88, `Timeline::paste` in `editor/canvas.rs`); the Hit volume lane adds
   points only with Ctrl+click, and a click on a point switches ramp and step (D-89).
   Covered by editor tests; **not yet checked on screen**.
+- **2026-11-14, second tester round (D-92):** every shortcut can be rebound in App
+  settings (`keys.rs`); wheel steps while playing chain from the last step instead of
+  the lagging audio clock (engine seek counting in `hs-audio/src/engine.rs`); the Hit
+  volume lane has its own tinted ground, a filled band, scale labels and an empty-curve
+  hint, and the waveform is neutral grey; the waveform can be hidden (button beside
+  Follow, View menu, palette). **Checked on screen** with the synthetic demo
+  (`tools/demo-mapset`) at 1440 × 860: the lane, hiding the waveform, the shortcut
+  list, a rebind with a conflict, and the rebound key playing. **Not checked by ear**:
+  wheel steps during real playback (covered by an editor test with a lagging clock).
 - **Debug-only QA hooks** in `app.rs` and `main.rs`: `HITSOUNDS_RS_QA_INPUT` (a file with
   one pointer, key or wheel event per write), `HITSOUNDS_RS_QA_CAPTURE` (a file naming the
   PNG to write) and `HITSOUNDS_RS_QA_SIZE` (`960x600`). They are compiled out of release
