@@ -3,14 +3,11 @@
 use crate::{
     chrome::Owner,
     editor::model::{Layer, Wave},
-    export_view::{ExportReview, LineDiff},
+    export_view::{ExportRequest, ExportReview, LineDiff},
     theme,
 };
 use eframe::egui::Context;
-use hs_core::{
-    ChannelId, ChannelProps, Edit, Project, SampleSource,
-    project::{ExportSettings, Monitor},
-};
+use hs_core::{ChannelId, ChannelProps, DiffProps, Edit, Project, SampleSource, project::Monitor};
 use hs_session::{
     Clock, Levels, OnMapsetChange, Session, Settings, Transport, import,
     library::{self, LibraryFolder},
@@ -100,7 +97,7 @@ pub enum Job {
     AuditionFile(PathBuf),
     AuditionChannel(ChannelId),
     ScanLibrary,
-    BuildExport(ExportSettings),
+    BuildExport(ExportRequest),
     ReadDiff(String),
     WriteExport,
 }
@@ -1041,11 +1038,23 @@ impl State {
                 ));
                 return Ok(None);
             }
-            Job::BuildExport(mut export) => {
+            Job::BuildExport(request) => {
                 let session = active(slot)?;
+                let mut export = request.settings;
                 // Project settings owns this one (D-78); the export page only shows it.
                 export.addition_only_normal = session.project.export.addition_only_normal;
-                session.edit(&Edit::SetExport { export })?;
+                let mut edits = vec![Edit::SetExport { export }];
+                // D-94: the export view's include switches are the difficulties' own.
+                for (file, enabled) in request.included {
+                    if let Some(profile) = session.project.diff(&file)
+                        && profile.enabled != enabled
+                    {
+                        let mut props = DiffProps::from(profile);
+                        props.enabled = enabled;
+                        edits.push(Edit::SetDiff { file, props });
+                    }
+                }
+                session.edit(&Edit::Batch { edits })?;
                 return Ok(Some(Outcome::ExportPreview(Box::new(ExportReview::new(
                     session.plan_export(),
                 )))));

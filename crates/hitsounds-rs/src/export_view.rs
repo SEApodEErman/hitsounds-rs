@@ -108,9 +108,43 @@ impl LineDiff {
     }
 }
 
+/// A difficulty as the export view lists it, with its include switch (D-94).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Included {
+    pub file: String,
+    pub label: String,
+    /// The `.osu` file is in the mapset.
+    pub exists: bool,
+    pub enabled: bool,
+}
+
+impl Included {
+    pub fn list(view: &crate::worker::ProjectView) -> Vec<Self> {
+        view.project
+            .diffs
+            .iter()
+            .map(|d| Self {
+                file: d.file.clone(),
+                label: d.label.clone(),
+                exists: view.available_diffs.contains(&d.file),
+                enabled: d.enabled,
+            })
+            .collect()
+    }
+}
+
+/// What a preview is built from: the export options and which difficulties to write.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExportRequest {
+    pub settings: ExportSettings,
+    /// Each difficulty's file and whether it is included (D-94).
+    pub included: Vec<(String, bool)>,
+}
+
 pub struct ExportPage {
     options: ExportSettings,
-    requested: Option<ExportSettings>,
+    included: Vec<Included>,
+    requested: Option<ExportRequest>,
     build_at: f64,
     review: Option<Box<ExportReview>>,
     comparison: Option<LineDiff>,
@@ -119,9 +153,10 @@ pub struct ExportPage {
 }
 
 impl ExportPage {
-    pub fn new(options: ExportSettings) -> Self {
+    pub fn new(options: ExportSettings, included: Vec<Included>) -> Self {
         Self {
             options,
+            included,
             requested: None,
             build_at: 0.0,
             review: None,
@@ -138,20 +173,36 @@ impl ExportPage {
         self.error = None;
     }
 
+    fn request(&self) -> ExportRequest {
+        ExportRequest {
+            settings: self.options.clone(),
+            included: self
+                .included
+                .iter()
+                .map(|d| (d.file.clone(), d.enabled))
+                .collect(),
+        }
+    }
+
+    fn current(&self) -> bool {
+        self.requested.as_ref() == Some(&self.request())
+    }
+
     pub fn build(&mut self, ctx: &Context, now: f64) -> Option<Job> {
-        if self.requested.as_ref() == Some(&self.options) || self.completed.is_some() {
+        if self.current() || self.completed.is_some() {
             return None;
         }
         if now < self.build_at {
             ctx.request_repaint_after(Duration::from_secs_f64(self.build_at - now));
             return None;
         }
-        self.requested = Some(self.options.clone());
-        Some(Job::BuildExport(self.options.clone()))
+        let request = self.request();
+        self.requested = Some(request.clone());
+        Some(Job::BuildExport(request))
     }
 
     pub fn review(&mut self, review: Box<ExportReview>) {
-        if self.requested.as_ref() == Some(&self.options) {
+        if self.current() {
             self.review = Some(review);
         }
     }
@@ -179,7 +230,7 @@ impl ExportPage {
     }
 
     pub fn can_write(&self) -> bool {
-        self.requested.as_ref() == Some(&self.options)
+        self.current()
             && self
                 .review
                 .as_ref()
@@ -217,11 +268,11 @@ impl ExportPage {
             .frame(Frame::new().fill(t::SURFACE).inner_margin(t::GUTTER))
             .show(ctx, |ui| {
                 ScrollArea::vertical().show(ui, |ui| {
-                    let before = self.options.clone();
+                    let before = self.request();
                     ui.add_enabled_ui(busy != Some("Writing export"), |ui| {
-                        options(ui, &mut self.options)
+                        options(ui, &mut self.options, &mut self.included)
                     });
-                    if self.options != before {
+                    if self.request() != before {
                         self.completed = None;
                         self.invalidate();
                         // Coalesce consecutive changes from a number drag.
@@ -297,7 +348,7 @@ impl ExportPage {
                 ui.label(t::muted("Empty edges will return to default hitsounds. Changed difficulties are backed up."));
             }
             if plan.diffs.is_empty() && plan.problems.is_empty() {
-                ui.label(t::muted("Enable a difficulty in the editor to prepare an export."));
+                ui.label(t::muted("Choose a difficulty under What to export."));
             }
             for diff in &plan.diffs {
                 ui.push_id(&diff.file, |ui| {
@@ -357,7 +408,7 @@ impl ExportPage {
     }
 }
 
-fn options(ui: &mut Ui, options: &mut ExportSettings) {
+fn options(ui: &mut Ui, options: &mut ExportSettings, included: &mut [Included]) {
     widgets::section(ui, "Where to write", |ui| {
         ui.radio_value(
             &mut options.write_mode,
@@ -376,6 +427,26 @@ fn options(ui: &mut Ui, options: &mut ExportSettings) {
         widgets::help(
             ui,
             "Writes separate .osu files and samples into the project folder. The mapset is not touched.",
+        );
+    });
+    // D-94: which difficulties to write, the same switch as each difficulty's Rules.
+    widgets::section(ui, "What to export", |ui| {
+        if included.is_empty() {
+            widgets::help(ui, "This project has no difficulties yet.");
+        }
+        for diff in included.iter_mut() {
+            let label = if diff.exists {
+                diff.label.clone()
+            } else {
+                format!("{} (file missing)", diff.label)
+            };
+            let response =
+                ui.add_enabled(diff.exists, egui::Checkbox::new(&mut diff.enabled, label));
+            widgets::describe(response, &diff.file, "");
+        }
+        widgets::help(
+            ui,
+            "Difficulties left out are not touched and keep their hitsounds. The same switch is in each difficulty's Rules.",
         );
     });
     // D-69: the file type of generated samples, as in Mapping Tools' Hitsound Studio.
@@ -604,7 +675,7 @@ mod tests {
 
     #[test]
     fn pending_preview_is_discarded_when_export_options_change() {
-        let mut page = ExportPage::new(ExportSettings::default());
+        let mut page = ExportPage::new(ExportSettings::default(), Vec::new());
         let ctx = Context::default();
         assert!(matches!(page.build(&ctx, 0.0), Some(Job::BuildExport(_))));
         page.options.write_mode = WriteMode::HitsoundOnly;
@@ -624,7 +695,31 @@ mod tests {
         assert!(page.review.is_none());
         assert!(!page.can_write());
         assert!(
-            matches!(page.build(&ctx, 1.0), Some(Job::BuildExport(options)) if options.write_mode == WriteMode::HitsoundOnly)
+            matches!(page.build(&ctx, 1.0), Some(Job::BuildExport(request)) if request.settings.write_mode == WriteMode::HitsoundOnly)
         );
+    }
+
+    #[test]
+    fn leaving_a_difficulty_out_rebuilds_the_preview_with_it_excluded() {
+        let diff = |file: &str| Included {
+            file: file.into(),
+            label: file.into(),
+            exists: true,
+            enabled: true,
+        };
+        let mut page = ExportPage::new(
+            ExportSettings::default(),
+            vec![diff("easy.osu"), diff("hard.osu")],
+        );
+        let ctx = Context::default();
+        assert!(matches!(page.build(&ctx, 0.0), Some(Job::BuildExport(_))));
+        assert!(page.build(&ctx, 0.0).is_none());
+        page.included[1].enabled = false;
+        assert!(!page.current());
+        assert!(matches!(
+            page.build(&ctx, 1.0),
+            Some(Job::BuildExport(request))
+                if request.included == [("easy.osu".to_owned(), true), ("hard.osu".to_owned(), false)]
+        ));
     }
 }

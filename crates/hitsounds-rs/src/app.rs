@@ -3,7 +3,7 @@
 use crate::{
     chrome,
     editor::{Act, Editor, Panel, Tool},
-    export_view::ExportPage,
+    export_view::{ExportPage, Included},
     keys::{self, Action},
     mapsets::{self, Picker, Purpose, Songs},
     palette::{Offer, Palette},
@@ -618,11 +618,14 @@ impl Studio {
                 }
             }
             Intent::OpenExport if self.ready() && self.export.is_none() => {
-                if let Some(options) = self.active().map(|view| view.project.export.clone()) {
+                if let Some((options, included)) = self
+                    .active()
+                    .map(|view| (view.project.export.clone(), Included::list(view)))
+                {
                     if self.clock.playing {
                         self.transport(Transport::Pause, ctx, now);
                     }
-                    self.export = Some(ExportPage::new(options));
+                    self.export = Some(ExportPage::new(options, included));
                 }
             }
             Intent::CloseExport if self.busy != Some("Writing export") => self.export = None,
