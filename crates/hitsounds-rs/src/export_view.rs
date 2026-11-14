@@ -438,6 +438,25 @@ fn options(ui: &mut Ui, options: &mut ExportSettings, included: &mut [Included])
             ui,
             "Writes separate .osu files and samples into the project folder. The mapset is not touched.",
         );
+        // D-95: the base layer as one hitsound difficulty, the way hitsounds were made
+        // before tools wrote into every difficulty. It goes wherever the mode above
+        // writes, so it sits with the modes.
+        ui.add_space(t::SMALL);
+        ui.checkbox(
+            &mut options.base_hitsound_diff,
+            "Also write a base hitsound difficulty",
+        );
+        widgets::help(
+            ui,
+            match options.write_mode {
+                WriteMode::Direct => {
+                    "An extra difficulty in the mapset with a circle on every base-layer hit. Copy it into your difficulties with Mapping Tools' Hitsound Copier."
+                }
+                WriteMode::HitsoundOnly => {
+                    "An extra difficulty with a circle on every base-layer hit, in the export folder. Copy it into your difficulties with Mapping Tools' Hitsound Copier."
+                }
+            },
+        );
     });
     // D-94: which difficulties to write, the same switch as each difficulty's Rules.
     widgets::section(ui, "What to export", |ui| {
@@ -457,22 +476,6 @@ fn options(ui: &mut Ui, options: &mut ExportSettings, included: &mut [Included])
         widgets::help(
             ui,
             "Difficulties left out are not touched and keep their hitsounds. The same switch is in each difficulty's Rules.",
-        );
-        // D-95: the base layer as one hitsound difficulty, the way hitsounds were made
-        // before tools wrote into every difficulty.
-        ui.add_space(t::SMALL);
-        ui.label(t::meta("Also write", t::DIM));
-        ui.checkbox(&mut options.base_hitsound_diff, "Base hitsound difficulty");
-        widgets::help(
-            ui,
-            match options.write_mode {
-                WriteMode::Direct => {
-                    "An extra difficulty in the mapset with a circle on every base-layer hit. Copy it into your difficulties with Mapping Tools' Hitsound Copier."
-                }
-                WriteMode::HitsoundOnly => {
-                    "An extra difficulty with a circle on every base-layer hit, in the export folder. Copy it into your difficulties with Mapping Tools' Hitsound Copier."
-                }
-            },
         );
     });
     // D-69: the file type of generated samples, as in Mapping Tools' Hitsound Studio.

@@ -191,9 +191,9 @@ channel*.
 Export becomes a full view instead of a dialog over the editor.
 
 - **Left: options, grouped and explained.** *Where to write* as two choices with one
-  line each (into the mapset, with backups; or hitsound-only copies). Then *What to
-  export*, a checkbox per difficulty (D-94) and *Also write: Base hitsound difficulty*
-  (D-95). Then *Indices*
+  line each (into the mapset, with backups; or hitsound-only copies), and below them
+  *Also write a base hitsound difficulty* (D-95). Then *What to export*, a checkbox per
+  difficulty (D-94). Then *Indices*
   (first custom index, first tick index), *Mixing* (grouping, silent hitnormal), and
   *Checks and cleanup* (auto-fix, schema growth, blank slides and ticks, take over
   existing samples).
