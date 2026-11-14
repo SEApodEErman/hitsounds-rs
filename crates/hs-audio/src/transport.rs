@@ -13,8 +13,8 @@ pub enum MonitorSource {
 pub struct TransportState {
     pub playing: bool,
     pub position_ms: f64,
-    /// osu! editor-style playback rate (0.25..=1.0). The song slows down and drops in
-    /// pitch; hitsounds keep their own speed and pitch.
+    /// osu! editor-style playback rate (0.25..=1.0). The song slows down and, by
+    /// default, keeps its pitch (D-90); hitsounds keep their own speed and pitch.
     pub rate: f64,
     pub monitor: MonitorSource,
     /// End of the song (or of the last hitsound when no song is loaded).

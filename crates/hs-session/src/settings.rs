@@ -1,8 +1,9 @@
 //! App-wide settings (`settings.json` in the OS config dir): the skin sample folder
 //! (D-40), the recent-projects list (D-41), the sample library folders (D-45) and the
 //! drums model for separation (D-71), the listening levels (D-77), and the osu!
-//! Songs folder and projects folder (D-82), and whether to check for updates (D-84).
-//! Nothing here belongs to a project.
+//! Songs folder and projects folder (D-82), whether to check for updates (D-84), and
+//! whether slowed playback keeps the song's pitch (D-90). Nothing here belongs to a
+//! project.
 
 use serde::{Deserialize, Serialize};
 use std::io::Write;
@@ -98,12 +99,20 @@ pub struct AppSettings {
     /// Check GitHub Releases for a newer version at startup (D-84). None = on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub update_checks: Option<bool>,
+    /// Keep the song's pitch below 1x speed (D-90). None = on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keep_pitch: Option<bool>,
 }
 
 impl AppSettings {
     /// D-84: update checks are on unless turned off.
     pub fn checks_for_updates(&self) -> bool {
         self.update_checks.unwrap_or(true)
+    }
+
+    /// D-90: slowed playback keeps the pitch unless turned off.
+    pub fn keeps_pitch(&self) -> bool {
+        self.keep_pitch.unwrap_or(true)
     }
 }
 
@@ -183,6 +192,11 @@ impl Settings {
     /// `true` is the default, so it is stored as `None`.
     pub fn set_update_checks(&mut self, on: bool) -> Result<(), String> {
         self.value.update_checks = (!on).then_some(false);
+        self.save()
+    }
+
+    pub fn set_keep_pitch(&mut self, on: bool) -> Result<(), String> {
+        self.value.keep_pitch = (!on).then_some(false);
         self.save()
     }
 

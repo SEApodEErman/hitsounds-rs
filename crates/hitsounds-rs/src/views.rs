@@ -1407,6 +1407,20 @@ fn settings(
             }
         });
     });
+    // D-90: on, as in the osu! editor. Off is tape-style varispeed.
+    widgets::section(ui, "Slowed playback", |ui| {
+        widgets::help(
+            ui,
+            "Below 1.00× the song plays slower at its own pitch, so quiet and low parts stay audible. Turn this off to slow it like a tape instead: lower in pitch, but every attack stays as sharp as at full speed, which can make timing easier to judge.",
+        );
+        let mut on = state.settings.keeps_pitch();
+        if ui
+            .checkbox(&mut on, "Keep the song's pitch when slowed down")
+            .changed()
+        {
+            emit(Intent::Job(Job::KeepPitch(on)));
+        }
+    });
     widgets::section(ui, "Interface scale", |ui| {
         widgets::help(
             ui,

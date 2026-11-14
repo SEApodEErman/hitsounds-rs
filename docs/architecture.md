@@ -104,6 +104,11 @@ The real-time stack uses the following components.
   `hs_session::Levels` turns master, music, effects and the two mutes into those gains.
   Each session has its own engine, so the worker applies the saved levels when a project
   opens; a dragged fader goes straight to the engine and is saved on release.
+- **Slowed playback** (D-90): below 1x the mixer plays the song through
+  `hs_audio::stretch`, a WSOLA time-stretcher that keeps the pitch and places each
+  grain from the song clock, so the music stays on the hitsound clock. At 1x, or with
+  *Keep the song's pitch when slowed down* off, the song is read directly as before.
+  `Command::SetKeepPitch` carries the setting; the worker applies it when a project opens.
 - **Offline render** (export, bounce) reuses `hs_audio::mix`, so preview and export
   produce the same output.
 

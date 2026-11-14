@@ -767,6 +767,11 @@ impl Session {
         self.playback.command(Command::SetVolumes { music, hitsounds, auditions })
     }
 
+    /// D-90: whether the song keeps its pitch below 1x. Monitoring only.
+    pub fn set_keep_pitch(&self, on: bool) -> Result<(), String> {
+        self.playback.command(Command::SetKeepPitch(on))
+    }
+
     pub fn transport(&self, action: Transport) -> Result<(), String> {
         self.playback.command(match action {
             Transport::Play => Command::Play,

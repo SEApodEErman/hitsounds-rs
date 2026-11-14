@@ -69,6 +69,8 @@ pub enum Job {
     ReduceMotion(Option<bool>),
     /// Turn the startup update check on or off (D-84).
     UpdateChecks(bool),
+    /// Keep the song's pitch when slowed (D-90).
+    KeepPitch(bool),
     UiScale(Option<f32>),
     /// Save and apply the listening levels (D-77).
     Levels(Levels),
@@ -118,6 +120,7 @@ impl Job {
             Self::ForgetRecent(_)
             | Self::ReduceMotion(_)
             | Self::UpdateChecks(_)
+            | Self::KeepPitch(_)
             | Self::UiScale(_)
             | Self::Levels(_) => "Saving settings",
             Self::ImportStem | Self::RemoveStem | Self::ApplySeparation(_) => "Updating drum stem",
@@ -145,6 +148,7 @@ impl Job {
             self,
             Self::ReduceMotion(_)
                 | Self::UpdateChecks(_)
+                | Self::KeepPitch(_)
                 | Self::UiScale(_)
                 | Self::Levels(_)
                 | Self::ForgetRecent(_)
@@ -502,6 +506,7 @@ impl State {
         self.waveform = None;
         // Each session opens its own audio engine, so it starts at the app's levels.
         let _ = session.set_levels(&self.settings.value.levels);
+        let _ = session.set_keep_pitch(self.settings.value.keeps_pitch());
         *slot = Some(session);
     }
 
@@ -858,6 +863,14 @@ impl State {
             }
             Job::UpdateChecks(on) => {
                 self.change_settings(|settings| settings.set_update_checks(on))?;
+                return Ok(None);
+            }
+            Job::KeepPitch(on) => {
+                // Apply first: a failed save still changes what you hear.
+                if let Some(session) = slot {
+                    session.set_keep_pitch(on)?;
+                }
+                self.change_settings(|settings| settings.set_keep_pitch(on))?;
                 return Ok(None);
             }
             Job::UiScale(value) => {

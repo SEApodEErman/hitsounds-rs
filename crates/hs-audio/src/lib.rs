@@ -6,6 +6,7 @@
 //! * [`decode`] / [`resample`]: files to PCM at a chosen rate.
 //! * [`mixer`]: the real-time mix of song and scheduled hitsound voices; [`engine`]
 //!   runs it on the output device.
+//! * [`stretch`]: keeps the song's pitch when playback is slowed (D-90).
 //! * [`peaks`]: waveform overview for the timeline.
 
 pub mod buffer;
@@ -15,6 +16,7 @@ pub mod mix;
 pub mod mixer;
 pub mod peaks;
 pub mod resample;
+pub mod stretch;
 pub mod transport;
 
 pub use buffer::AudioBuffer;

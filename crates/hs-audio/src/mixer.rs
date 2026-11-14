@@ -4,6 +4,7 @@
 //! [`crate::engine::Engine`] drives it from the cpal callback. Every buffer handed to
 //! the mixer must already be stereo at the mixer's sample rate.
 
+use crate::stretch::Stretcher;
 use crate::{AudioBuffer, MonitorSource};
 use std::sync::Arc;
 
@@ -24,6 +25,9 @@ pub enum Command {
     Pause,
     Seek(f64),
     SetRate(f64),
+    /// Keep the song's pitch when the rate is not 1 (D-90). Off = tape-style
+    /// varispeed, lower and slower.
+    SetKeepPitch(bool),
     SetMonitor(MonitorSource),
     SetMusic {
         original: Option<Arc<AudioBuffer>>,
@@ -70,6 +74,8 @@ pub struct Mixer {
     monitor: MonitorSource,
     playing: bool,
     rate: f64,
+    keep_pitch: bool,
+    stretcher: Stretcher,
     /// Song position in frames at the mixer rate.
     pos: f64,
     music_volume: f32,
@@ -91,6 +97,8 @@ impl Mixer {
             monitor: MonitorSource::Original,
             playing: false,
             rate: 1.0,
+            keep_pitch: true,
+            stretcher: Stretcher::new(sample_rate),
             pos: 0.0,
             music_volume: 0.6,
             hitsound_volume: 1.0,
@@ -166,6 +174,7 @@ impl Mixer {
             Command::Play => {
                 if self.pos >= self.frame_of(self.length_ms()) {
                     self.pos = 0.0;
+                    self.stretcher.reset();
                     self.reset_cursor();
                 }
                 self.playing = true;
@@ -174,13 +183,16 @@ impl Mixer {
             Command::Seek(ms) => {
                 self.pos = self.frame_of(ms.clamp(0.0, self.length_ms().max(0.0)));
                 self.voices.clear();
+                self.stretcher.reset();
                 self.reset_cursor();
             }
             Command::SetRate(rate) => self.rate = rate.clamp(0.1, 2.0),
+            Command::SetKeepPitch(on) => self.keep_pitch = on,
             Command::SetMonitor(monitor) => self.monitor = monitor,
             Command::SetMusic { original, stem } => {
                 self.original = original;
                 self.stem = stem;
+                self.stretcher.reset();
             }
             Command::SetSchedule(schedule) => {
                 self.schedule = schedule;
@@ -191,7 +203,10 @@ impl Mixer {
                 self.hitsound_volume = hitsounds.clamp(0.0, 2.0);
                 self.audition_volume = auditions.clamp(0.0, 2.0);
             }
-            Command::SetMusicOffset(ms) => self.music_offset_frames = self.frame_of(ms),
+            Command::SetMusicOffset(ms) => {
+                self.music_offset_frames = self.frame_of(ms);
+                self.stretcher.reset();
+            }
             Command::OneShot { buffer, gain } => self.voices.push(Voice { buffer, pos: 0, gain, hit: false, start: 0, end_frame: None }),
         }
     }
@@ -229,18 +244,9 @@ impl Mixer {
                 }
                 if let Some(m) = &music {
                     let at = self.pos - self.music_offset_frames;
-                    if at >= 0.0 {
-                        let i0 = at as usize;
-                        let frac = (at - i0 as f64) as f32;
-                        let total = m.frames();
-                        if i0 < total {
-                            let i1 = (i0 + 1).min(total - 1);
-                            for c in 0..2 {
-                                let a = m.samples[i0 * 2 + c];
-                                let b = m.samples[i1 * 2 + c];
-                                self.scratch[i * 2 + c] += (a + (b - a) * frac) * self.music_volume;
-                            }
-                        }
+                    let lr = self.stretcher.frame(m, at, self.rate, self.keep_pitch);
+                    for (c, v) in lr.into_iter().enumerate() {
+                        self.scratch[i * 2 + c] += v * self.music_volume;
                     }
                 }
                 self.pos += self.rate;
@@ -361,6 +367,32 @@ mod tests {
         assert_eq!(out.iter().position(|s| *s != 0.0), Some(100));
         assert_eq!(out.iter().filter(|s| **s != 0.0).count(), 4);
         assert_eq!(m.position_ms(), 100.0);
+    }
+
+    #[test]
+    fn slowed_song_keeps_its_pitch_unless_turned_off() {
+        // D-90. 441 Hz has 882 zero crossings a second; tape-style 0.5x halves that.
+        const HZ: u32 = 48_000;
+        let samples = (0..HZ as usize * 2)
+            .flat_map(|i| {
+                let s = (i as f32 * 441.0 * std::f32::consts::TAU / HZ as f32).sin() * 0.5;
+                [s, s]
+            })
+            .collect();
+        let song = Arc::new(AudioBuffer { sample_rate: HZ, channels: 2, samples });
+        let crossings = |keep: bool| {
+            let mut m = Mixer::new(HZ);
+            m.handle(Command::SetMusic { original: Some(song.clone()), stem: None });
+            m.handle(Command::SetVolumes { music: 1.0, hitsounds: 1.0, auditions: 1.0 });
+            m.handle(Command::SetRate(0.5));
+            m.handle(Command::SetKeepPitch(keep));
+            m.handle(Command::Play);
+            let out = render(&mut m, HZ as usize);
+            assert_eq!(m.position_ms(), 500.0);
+            out.windows(2).filter(|w| (w[0] < 0.0) != (w[1] < 0.0)).count() as i64
+        };
+        assert!((crossings(true) - 882).abs() <= 8);
+        assert!((crossings(false) - 441).abs() <= 2);
     }
 
     #[test]
