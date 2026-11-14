@@ -343,6 +343,26 @@ struct Typing {
     focus: bool,
 }
 
+/// Turns the percent entry `id` into its text field at once, as a click on its readout
+/// does, with `shown` (0 to 1) selected. The Hit volume lane opens it on a double-click.
+pub fn open_percent_entry(ctx: &Context, id: Id, shown: f32) {
+    ctx.data_mut(|data| {
+        data.insert_temp(
+            id,
+            Typing {
+                draft: format!("{:.0}", shown * 100.0),
+                focus: true,
+            },
+        );
+    });
+    ctx.request_repaint();
+}
+
+/// Whether the percent entry `id` is still being typed into.
+pub fn percent_entry_open(ctx: &Context, id: Id) -> bool {
+    ctx.data(|data| data.get_temp::<Typing>(id).is_some())
+}
+
 /// A percent readout under a fader that becomes a text field when clicked (D-87).
 /// Enter or clicking away sets the typed value, Esc keeps the old one. Returns the
 /// readout's response and the value typed, from 0 to 1.

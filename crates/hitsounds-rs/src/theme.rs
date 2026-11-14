@@ -81,6 +81,10 @@ pub const WAVE_HEIGHT: f32 = 48.0;
 pub const WAVE_HIDDEN_HEIGHT: f32 = 30.0;
 pub const VOLUME_HEIGHT: f32 = 52.0;
 pub const OBJECTS_HEIGHT: f32 = 28.0;
+/// The gap between a Hit volume point and its value bubble or entry field (D-93).
+pub const BUBBLE_OFFSET: f32 = 10.0;
+/// The height of the field a double-click on a volume point opens (D-93).
+pub const ENTRY_HEIGHT: f32 = 28.0;
 pub const TIMELINE_SCROLLBAR: f32 = 10.0;
 pub const HIT_RADIUS: f32 = 7.0;
 pub const DRAG_THRESHOLD: f32 = 4.0;
@@ -304,6 +308,16 @@ pub fn card() -> Frame {
 
 pub fn overlay() -> Frame {
     card().shadow(shadow())
+}
+
+/// The small raised frame of the Hit volume value bubble and its entry field (D-93).
+pub fn bubble() -> Frame {
+    Frame::new()
+        .fill(RAISED)
+        .stroke(stroke(EDGE_STRONG))
+        .corner_radius(SMALL)
+        .inner_margin(Margin::symmetric(4, 3))
+        .shadow(shadow())
 }
 
 pub fn display(text: impl Into<String>, size: f32) -> RichText {

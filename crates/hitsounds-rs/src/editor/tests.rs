@@ -316,6 +316,11 @@ fn click(h: &mut Harness<'_, Fixture>, pos: Pos2, button: PointerButton, mods: M
     h.step();
 }
 
+/// Waits out the double-click time, after which a click on a volume point is sent (D-93).
+fn settle(h: &mut Harness<'_, Fixture>) {
+    h.run_steps(48);
+}
+
 fn drag(h: &mut Harness<'_, Fixture>, from: Pos2, to: Pos2) {
     h.hover_at(from);
     pointer(h, from, PointerButton::Primary, true, Modifiers::NONE);
@@ -486,6 +491,13 @@ fn volume_points_need_ctrl_to_add_and_a_click_switches_ramp_and_step() {
     // Dragging a point never switches its curve.
     assert_eq!(h.state().view.project.volume.points[0].curve, Curve::Linear);
     click(&mut h, a, PointerButton::Primary, Modifiers::NONE);
+    // D-93: the switch shows at once but is sent after the double-click time.
+    assert_eq!(
+        h.state().timeline.draft().unwrap().points[0].curve,
+        Curve::Step
+    );
+    assert_eq!(h.state().view.project.volume.points[0].curve, Curve::Linear);
+    settle(&mut h);
     assert_eq!(h.state().view.project.volume.points[0].curve, Curve::Step);
     assert_eq!(h.state().view.project.volume.points.len(), 2);
     let between = h.state().volume(750.0, 60.0);
@@ -493,10 +505,12 @@ fn volume_points_need_ctrl_to_add_and_a_click_switches_ramp_and_step() {
     h.step();
     assert!(h.state().timeline.hover.contains("Volume 80%"));
     click(&mut h, a, PointerButton::Primary, Modifiers::NONE);
+    settle(&mut h);
     assert_eq!(h.state().view.project.volume.points[0].curve, Curve::Linear);
     // The last point's curve leads nowhere, so a click on it changes nothing.
     let edits = h.state().edits.len();
     click(&mut h, destination, PointerButton::Primary, Modifiers::NONE);
+    settle(&mut h);
     assert_eq!(h.state().edits.len(), edits);
     click(
         &mut h,
@@ -505,6 +519,79 @@ fn volume_points_need_ctrl_to_add_and_a_click_switches_ramp_and_step() {
         Modifiers::NONE,
     );
     assert_eq!(h.state().view.project.volume.points.len(), 1);
+}
+
+fn bubble(h: &Harness<'_, Fixture>, at: Pos2) -> Option<super::canvas::VolumeBubble> {
+    let f = h.state();
+    let canvas = super::canvas::Canvas {
+        view: &f.view,
+        clock: &f.clock,
+        geometry: f.geometry(),
+        ready: true,
+        reduced: true,
+        all_muted: false,
+    };
+    f.timeline.volume_bubble(&canvas, Some(at))
+}
+
+fn double_click(h: &mut Harness<'_, Fixture>, pos: Pos2) {
+    click(h, pos, PointerButton::Primary, Modifiers::NONE);
+    click(h, pos, PointerButton::Primary, Modifiers::NONE);
+    h.run_steps(3);
+}
+
+fn type_value(h: &mut Harness<'_, Fixture>, text: &str, key: Key) {
+    h.event(Event::Text(text.into()));
+    h.step();
+    h.key_press(key);
+    h.run_steps(3);
+}
+
+#[test]
+fn volume_lane_shows_the_value_under_the_pointer_and_a_double_click_types_it() {
+    let mut h = harness(Fixture::new(2));
+    let a = h.state().volume(500.0, 80.0);
+    let b = h.state().volume(1500.0, 40.0);
+    click(&mut h, a, PointerButton::Primary, Modifiers::CTRL);
+    click(&mut h, b, PointerButton::Primary, Modifiers::CTRL);
+    let edits = h.state().edits.len();
+
+    // D-93: on a point the bubble gives the point's value, between points the curve's.
+    h.hover_at(a);
+    h.step();
+    let on_point = bubble(&h, a).expect("a bubble over a point");
+    assert!(on_point.point);
+    assert_eq!((on_point.volume, on_point.time), (80.0, 500.0));
+    let between = h.state().volume(1000.0, 20.0);
+    let curve = bubble(&h, between).expect("a bubble over the curve");
+    assert!(!curve.point);
+    assert!((curve.volume - 60.0).abs() < 0.5, "{curve:?}");
+    assert!(bubble(&h, h.state().lane(0, 1000.0)).is_none());
+
+    // A double-click types the value: one edit, and the clicks switch nothing.
+    double_click(&mut h, a);
+    assert!(h.state().timeline.typing_volume());
+    assert!(bubble(&h, a).is_none(), "the field replaces the bubble");
+    type_value(&mut h, "42%", Key::Enter);
+    settle(&mut h);
+    assert!(!h.state().timeline.typing_volume());
+    let first = h.state().view.project.volume.points[0];
+    assert_eq!((first.volume, first.curve), (42, Curve::Linear));
+    assert_eq!(h.state().edits.len(), edits + 1);
+
+    // Esc keeps the old value.
+    let a = h.state().volume(500.0, 42.0);
+    double_click(&mut h, a);
+    type_value(&mut h, "90", Key::Escape);
+    settle(&mut h);
+    assert_eq!(h.state().view.project.volume.points[0].volume, 42);
+    assert_eq!(h.state().edits.len(), edits + 1);
+
+    // Out of osu!'s range, it is clamped to 5..=100.
+    double_click(&mut h, b);
+    type_value(&mut h, "2", Key::Enter);
+    assert_eq!(h.state().view.project.volume.points[1].volume, 5);
+    assert_eq!(h.state().edits.len(), edits + 2);
 }
 
 #[test]

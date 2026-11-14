@@ -38,6 +38,9 @@ const WHEEL_CHAIN_SECONDS: f64 = 0.35;
 /// How far the clock may be from where the last wheel step went for the next step to
 /// still continue from it; further means something else moved the playhead.
 const WHEEL_CHAIN_MS: f64 = 350.0;
+/// A second click on the same volume point this soon after the first is a double-click
+/// (D-93). It matches egui's own double-click time.
+const DOUBLE_CLICK_SECONDS: f64 = 0.3;
 
 /// The pointer tools of the timeline, as in FL Studio's playlist (D-62), in the order
 /// and on the number keys testers asked for (D-86). Right-click deletes a hit with every
@@ -122,6 +125,38 @@ pub struct Timeline {
     /// Text for the system clipboard, written on the next frame. Without text there,
     /// egui-winit sends no paste event for Ctrl+V at all.
     clipboard_text: Option<String>,
+    /// A click on a volume point, shown at once but sent only once the double-click
+    /// time has passed, so a double-click types a value instead of switching twice (D-93).
+    pending_toggle: Option<PendingToggle>,
+    /// The volume point whose value is being typed after a double-click on it (D-93).
+    volume_entry: Option<VolumeEntry>,
+}
+
+/// A ramp/step switch waiting out the double-click time (D-93).
+struct PendingToggle {
+    /// The curve as it was when clicked. If it changes meanwhile, the switch is dropped.
+    base: VolumeEnvelope,
+    draft: VolumeEnvelope,
+    index: usize,
+    at: f64,
+}
+
+/// A volume point's value being typed (D-93). The point is found again by its time.
+struct VolumeEntry {
+    base: VolumeEnvelope,
+    time: Ms,
+    /// The field has yet to be opened with the point's value.
+    fresh: bool,
+}
+
+/// What the value bubble over the Hit volume lane shows (D-93): the curve's value where
+/// it is anchored, and whether that is a point.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct VolumeBubble {
+    pub at: Pos2,
+    pub volume: f64,
+    pub time: f64,
+    pub point: bool,
 }
 
 impl Default for Timeline {
@@ -152,6 +187,8 @@ impl Default for Timeline {
             last_position: 0.0,
             clipboard: Vec::new(),
             clipboard_text: None,
+            pending_toggle: None,
+            volume_entry: None,
         }
     }
 }
@@ -364,6 +401,8 @@ impl Timeline {
         self.issue = None;
         self.gesture = None;
         self.context = None;
+        self.pending_toggle = None;
+        self.volume_entry = None;
     }
 
     pub fn adopt(&mut self, view: &ProjectView) {
@@ -720,7 +759,9 @@ impl Timeline {
         if self.hover != previous_hover {
             ui.ctx().request_repaint();
         }
+        self.settle_toggle(ui.ctx(), view, now, emit);
         super::paint::timeline(ui, self, &canvas, hover);
+        self.volume_entry(ui.ctx(), &canvas, emit);
         let rack = rail::RailState {
             scroll: self.scroll,
             selected: self.channel,
@@ -852,7 +893,7 @@ impl Timeline {
             && let Some(origin) = pointer.2.or(pointer.3)
         {
             response.request_focus();
-            self.begin(canvas, origin, pointer.4, emit);
+            self.begin(canvas, origin, pointer.4, now, emit);
         }
         if let Some(position) = pointer.3 {
             if matches!(self.gesture, Some(Gesture::Seek { .. })) {
@@ -864,7 +905,7 @@ impl Timeline {
             self.drag(canvas, position, emit);
         }
         if pointer.1 {
-            self.finish(canvas, emit);
+            self.finish(canvas, now, emit);
         }
         if response.secondary_clicked()
             && let Some(point) = pointer.3
@@ -1064,11 +1105,37 @@ impl Timeline {
         )
     }
 
-    fn begin(&mut self, canvas: &Canvas<'_>, point: Pos2, mods: Modifiers, emit: Emit<'_>) {
+    fn begin(
+        &mut self,
+        canvas: &Canvas<'_>,
+        point: Pos2,
+        mods: Modifiers,
+        now: f64,
+        emit: Emit<'_>,
+    ) {
         let view = canvas.view;
         let g = canvas.geometry;
         let time = self.viewport.time(g.plot, point.x);
         let ctrl = mods.ctrl || mods.command;
+        if let Some(pending) = self.pending_toggle.take() {
+            let again = !ctrl
+                && !mods.shift
+                && g.volume.contains(point)
+                && now - pending.at < DOUBLE_CLICK_SECONDS
+                && pending.base == *envelope(view)
+                && self.volume_point(g, &pending.draft, point) == Some(pending.index);
+            if again {
+                // D-93: a double-click types the point's value. The first click's
+                // ramp/step switch was never sent, so it is simply dropped.
+                self.volume_entry = Some(VolumeEntry {
+                    time: pending.base.points[pending.index].time,
+                    base: pending.base,
+                    fresh: true,
+                });
+                return;
+            }
+            Self::send_toggle(pending, view, emit);
+        }
         if g.hscroll.contains(point) {
             let (width, max_left) = self.overview_span(canvas);
             let span = (g.hscroll.width() - width).max(1.0);
@@ -1376,7 +1443,7 @@ impl Timeline {
         self.viewport.left != before
     }
 
-    fn finish(&mut self, canvas: &Canvas<'_>, emit: Emit<'_>) {
+    fn finish(&mut self, canvas: &Canvas<'_>, now: f64, emit: Emit<'_>) {
         let Some(gesture) = self.gesture.take() else {
             return;
         };
@@ -1438,19 +1505,30 @@ impl Timeline {
                 ..
             } => set_volume(emit, view, draft.points),
             Gesture::Volume {
-                mut draft,
+                draft,
                 index,
                 toggle: true,
                 ..
-            } if index + 1 < draft.points.len() => {
-                // The last point's curve leads nowhere, so switching it would change nothing.
-                let curve = &mut draft.points[index].curve;
-                *curve = if *curve == Curve::Linear {
-                    Curve::Step
-                } else {
-                    Curve::Linear
-                };
-                set_volume(emit, view, draft.points);
+            } => {
+                // The switch shows at once but is sent only once the double-click time
+                // has passed (D-93). The last point's curve leads nowhere, so switching
+                // it would change nothing, but its click still counts toward a double-click.
+                let base = draft.clone();
+                let mut draft = draft;
+                if index + 1 < draft.points.len() {
+                    let curve = &mut draft.points[index].curve;
+                    *curve = if *curve == Curve::Linear {
+                        Curve::Step
+                    } else {
+                        Curve::Linear
+                    };
+                }
+                self.pending_toggle = Some(PendingToggle {
+                    base,
+                    draft,
+                    index,
+                    at: now,
+                });
             }
             Gesture::Paint { channel, times, .. } => {
                 let events: Vec<Hit> = times
@@ -1584,6 +1662,7 @@ impl Timeline {
             let on_point = self.volume_point(g, envelope(canvas.view), point).is_some();
             if on_point {
                 line.key("Click", "Ramp or step")
+                    .key("Double-click", "Type value")
                     .key("Drag", "Move point")
                     .key("Right-click", "Delete point")
             } else {
@@ -1669,7 +1748,157 @@ impl Timeline {
     pub(crate) fn draft(&self) -> Option<&VolumeEnvelope> {
         match &self.gesture {
             Some(Gesture::Volume { draft, .. }) => Some(draft),
-            _ => None,
+            _ => self.pending_toggle.as_ref().map(|pending| &pending.draft),
+        }
+    }
+
+    /// Sends a waiting ramp/step switch once the double-click time has passed (D-93).
+    fn settle_toggle(&mut self, ctx: &egui::Context, view: &ProjectView, now: f64, emit: Emit<'_>) {
+        let Some(pending) = &self.pending_toggle else {
+            return;
+        };
+        let left = DOUBLE_CLICK_SECONDS - (now - pending.at);
+        if left > 0.0 {
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64(left));
+        } else if let Some(pending) = self.pending_toggle.take() {
+            Self::send_toggle(pending, view, emit);
+        }
+    }
+
+    fn send_toggle(pending: PendingToggle, view: &ProjectView, emit: Emit<'_>) {
+        // Dropped if something else changed the curve meanwhile, such as an undo.
+        if pending.draft != pending.base && pending.base == *envelope(view) {
+            set_volume(emit, view, pending.draft.points);
+        }
+    }
+
+    /// The value bubble over the Hit volume lane (D-93): the point being dragged, the
+    /// point under the pointer, or the curve's value where the pointer is.
+    pub(super) fn volume_bubble(
+        &self,
+        canvas: &Canvas<'_>,
+        hover: Option<Pos2>,
+    ) -> Option<VolumeBubble> {
+        let g = canvas.geometry;
+        let bubble = |envelope: &VolumeEnvelope, index: usize| {
+            let node = envelope.points[index];
+            VolumeBubble {
+                at: pos2(
+                    self.viewport.x(g.plot, f64::from(node.time)),
+                    g.volume_y(f64::from(node.volume)),
+                ),
+                volume: f64::from(node.volume),
+                time: f64::from(node.time),
+                point: true,
+            }
+        };
+        if let Some(Gesture::Volume { draft, index, .. }) = &self.gesture {
+            return Some(bubble(draft, *index));
+        }
+        if self.gesture.is_some() || self.volume_entry.is_some() {
+            return None;
+        }
+        let point = hover.filter(|point| g.volume.contains(*point))?;
+        let envelope = self.draft().unwrap_or_else(|| envelope(canvas.view));
+        if let Some(index) = self.volume_point(g, envelope, point) {
+            return Some(bubble(envelope, index));
+        }
+        let time = self.viewport.time(g.plot, point.x).max(0.0);
+        let volume = envelope.at(time);
+        Some(VolumeBubble {
+            at: pos2(point.x, g.volume_y(volume)),
+            volume,
+            time,
+            point: false,
+        })
+    }
+
+    /// Whether a volume point's value is being typed (D-93).
+    #[cfg(test)]
+    pub(super) fn typing_volume(&self) -> bool {
+        self.volume_entry.is_some()
+    }
+
+    /// The field a double-click on a volume point opens over it (D-93). Enter or
+    /// clicking away sets the typed value and Esc keeps the old one, as in D-87.
+    fn volume_entry(&mut self, ctx: &egui::Context, canvas: &Canvas<'_>, emit: Emit<'_>) {
+        let Some(entry) = &mut self.volume_entry else {
+            return;
+        };
+        let view = canvas.view;
+        let g = canvas.geometry;
+        let current = envelope(view);
+        let index = (*current == entry.base)
+            .then(|| {
+                current
+                    .points
+                    .binary_search_by_key(&entry.time, |p| p.time)
+                    .ok()
+            })
+            .flatten();
+        let Some(index) = index else {
+            // The curve changed under the field, by an undo say: there is nothing to set.
+            self.volume_entry = None;
+            return;
+        };
+        let node = current.points[index];
+        let id = volume_entry_id();
+        if entry.fresh {
+            // Opened while the double-click's button is still down, the field would take
+            // its release for a click elsewhere and close at once.
+            if ctx.input(|i| i.pointer.any_down() || i.pointer.any_released()) {
+                ctx.request_repaint();
+                return;
+            }
+            entry.fresh = false;
+            widgets::open_percent_entry(ctx, id, node.volume as f32 / 100.0);
+        }
+        let at = pos2(
+            self.viewport
+                .x(g.plot, f64::from(node.time))
+                .clamp(g.plot.left(), g.plot.right()),
+            g.volume_y(f64::from(node.volume)),
+        );
+        let (pivot, anchor) = bubble_place(g, at, t::ENTRY_HEIGHT);
+        let mut typed = None;
+        egui::Area::new(id.with("area"))
+            .order(egui::Order::Foreground)
+            .pivot(pivot)
+            .fixed_pos(anchor)
+            .show(ctx, |ui| {
+                t::bubble().show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.x = 2.0;
+                    ui.horizontal(|ui| {
+                        let (rect, _) = ui.allocate_exact_size(vec2(34.0, 18.0), Sense::hover());
+                        typed = widgets::percent_entry(
+                            ui,
+                            rect,
+                            id,
+                            node.volume as f32 / 100.0,
+                            t::TEXT,
+                        )
+                        .1;
+                        ui.label(
+                            egui::RichText::new("%")
+                                .monospace()
+                                .size(t::META_SIZE)
+                                .color(t::DIM),
+                        );
+                    });
+                });
+            });
+        if widgets::percent_entry_open(ctx, id) {
+            return;
+        }
+        self.volume_entry = None;
+        // osu! takes 5 % to 100 % (hs_core::VolumePoint).
+        let Some(volume) = typed.map(|v| ((v * 100.0).round() as u32).clamp(5, 100)) else {
+            return;
+        };
+        if volume != node.volume {
+            let mut points = current.points.clone();
+            points[index].volume = volume;
+            set_volume(emit, view, points);
         }
     }
 
@@ -1714,6 +1943,27 @@ impl Timeline {
 
 pub fn surface_id() -> Id {
     Id::new("timeline-editing-surface")
+}
+
+fn volume_entry_id() -> Id {
+    Id::new("timeline-volume-entry")
+}
+
+/// Where a bubble `height` tall goes for a point at `at` in the Hit volume lane (D-93):
+/// above the point, or below it when the plot has no room above. Returns the bubble's
+/// pivot and the position that pivot is placed at.
+pub(crate) fn bubble_place(g: Geometry, at: Pos2, height: f32) -> (egui::Align2, Pos2) {
+    if at.y - t::BUBBLE_OFFSET - height >= g.plot.top() {
+        (
+            egui::Align2::CENTER_BOTTOM,
+            pos2(at.x, at.y - t::BUBBLE_OFFSET),
+        )
+    } else {
+        (
+            egui::Align2::CENTER_TOP,
+            pos2(at.x, at.y + t::BUBBLE_OFFSET),
+        )
+    }
 }
 
 pub fn envelope(view: &ProjectView) -> &VolumeEnvelope {

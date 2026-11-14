@@ -2,13 +2,14 @@
 //! performed before the frame, and only visible rows, buckets, and hits are drawn.
 
 use super::{
-    canvas::{Canvas, Geometry, Timeline, Tool, Viewport, envelope},
+    canvas::{Canvas, Geometry, Timeline, Tool, Viewport, VolumeBubble, bubble_place, envelope},
     grid,
     model::{IssueKind, Objects},
 };
 use crate::{theme as t, worker::ProjectView};
 use eframe::egui::{
-    Align2, Color32, FontId, Mesh, Painter, Pos2, Rect, Shape, Stroke, StrokeKind, Ui, pos2, vec2,
+    Align2, Color32, FontId, Id, LayerId, Mesh, Order, Painter, Pos2, Rect, Shape, Stroke,
+    StrokeKind, Ui, pos2, vec2,
 };
 use hs_core::{Curve, EdgeKind, HitKind, Ms, Target, VolumeEnvelope};
 
@@ -71,6 +72,9 @@ pub fn timeline(ui: &Ui, state: &Timeline, canvas: &Canvas<'_>, hover: Option<Po
         (from, until),
         accent,
     );
+    if let Some(bubble) = state.volume_bubble(canvas, hover) {
+        volume_bubble(ui, g, bubble, accent);
+    }
     if let Some(objects) = &view.layer.objects {
         object_lane(&painter, g, state, objects, from, until);
     }
@@ -412,6 +416,72 @@ fn volume(
             t::TEXT.gamma_multiply(0.8),
         );
     }
+}
+
+/// The value under the pointer in the Hit volume lane, shown where the eye already is
+/// (D-93): the hovered or dragged point is lit, or a dot marks the curve under the
+/// pointer, and a bubble above it gives the percent and the time.
+fn volume_bubble(ui: &Ui, g: Geometry, bubble: VolumeBubble, color: Color32) {
+    let lane = ui.painter().with_clip_rect(g.volume);
+    if bubble.point {
+        lane.circle(bubble.at, 5.5, color, Stroke::new(1.5_f32, t::TEXT));
+    } else {
+        lane.vline(
+            bubble.at.x,
+            g.volume.y_range(),
+            Stroke::new(1.0_f32, color.gamma_multiply(0.35)),
+        );
+        lane.circle(bubble.at, 3.5, color, Stroke::new(1.5_f32, t::STAGE));
+    }
+    let p = ui
+        .ctx()
+        .layer_painter(LayerId::new(
+            Order::Tooltip,
+            Id::new("timeline-volume-bubble"),
+        ))
+        .with_clip_rect(g.plot);
+    let value = p.layout_no_wrap(
+        format!("{:.0}%", bubble.volume),
+        FontId::monospace(t::META_SIZE + 1.0),
+        t::TEXT,
+    );
+    let time = p.layout_no_wrap(
+        grid::timecode(bubble.time),
+        FontId::monospace(t::META_SIZE - 1.0),
+        t::DIM,
+    );
+    let pad = vec2(6.0, 3.0);
+    let gap = 6.0;
+    let inner = vec2(
+        value.size().x + gap + time.size().x,
+        value.size().y.max(time.size().y),
+    );
+    let size = inner + pad * 2.0;
+    let (pivot, anchor) = bubble_place(g, bubble.at, size.y);
+    let mut rect = pivot.anchor_size(anchor, size);
+    // Keep it whole at the plot's edges.
+    let shift = (g.plot.left() + 2.0 - rect.left()).max(0.0)
+        + (g.plot.right() - 2.0 - rect.right()).min(0.0);
+    rect = rect.translate(vec2(shift, 0.0));
+    p.rect(
+        rect,
+        t::SMALL,
+        t::RAISED,
+        Stroke::new(1.0_f32, color.gamma_multiply(0.6)),
+        StrokeKind::Inside,
+    );
+    let left = rect.left() + pad.x;
+    let middle = rect.center().y;
+    p.galley(
+        pos2(left, middle - value.size().y / 2.0),
+        value.clone(),
+        t::TEXT,
+    );
+    p.galley(
+        pos2(left + value.size().x + gap, middle - time.size().y / 2.0),
+        time,
+        t::DIM,
+    );
 }
 
 pub fn hit_color(kind: HitKind) -> Color32 {

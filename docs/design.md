@@ -280,7 +280,8 @@ crates/
    - click places, drag selects, Ctrl-click toggles, drag moves in time and across
      channels, right-click deletes, Enter, Delete, Ctrl+A, Escape (D-47)
    - volume lane: add, drag, right-click delete, Ctrl+click ramp/step, readout (D-44);
-     since D-89, Ctrl+click adds and a click on a point switches ramp/step
+     since D-89, Ctrl+click adds and a click on a point switches ramp/step; since D-93,
+     a value bubble follows the pointer and a double-click on a point types its value
    - objects lane: hit states, ticks, click to select and seek
    - follow playhead, zoom/fit, double-click rename, mute/solo, sample drop (D-45)
 4. **Rail, inspector, library, difficulty panel** with the issue list and timeline
@@ -424,6 +425,14 @@ Current state:
   (`tools/demo-mapset`) at 1440 × 860: the lane, hiding the waveform, the shortcut
   list, a rebind with a conflict, and the rebound key playing. **Not checked by ear**:
   wheel steps during real playback (covered by an editor test with a lagging clock).
+- **2026-11-15, Hit volume readout (D-93):** hovering the lane shows the value in a
+  bubble at the curve (the point under the pointer, or the curve where the pointer is),
+  and a double-click on a point opens a typed-value field over it. A click's ramp/step
+  switch is sent after the double-click time. **Checked on screen** with the synthetic
+  demo plus four volume points at 1440 × 860: the bubble on a point and between points,
+  the field opening with the value selected and no ramp/step switch, Esc closing it
+  without an edit. Typing into the field is covered by an editor test, since the QA
+  hook sends no text.
 - **Debug-only QA hooks** in `app.rs` and `main.rs`: `HITSOUNDS_RS_QA_INPUT` (a file with
   one pointer, key or wheel event per write), `HITSOUNDS_RS_QA_CAPTURE` (a file naming the
   PNG to write) and `HITSOUNDS_RS_QA_SIZE` (`960x600`). They are compiled out of release
