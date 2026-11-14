@@ -1,0 +1,23 @@
+name: Feature request
+description: An idea that would make hitsounding easier.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the problem or the part of your workflow that is slow or awkward, not only the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+      description: How you imagine it working. Screenshots or examples from other tools (Mapping Tools, FL Studio, the osu! editor) are welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: How do you do it today?
+      description: Workarounds or other tools you use now, if any.

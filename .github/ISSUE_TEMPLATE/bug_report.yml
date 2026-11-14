@@ -1,0 +1,76 @@
+name: Bug report
+description: Something doesn't work, sounds wrong in game, or the app crashed.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing hitsounds-rs. Please check the [FAQ](https://github.com/SEApodEErman/hitsounds-rs/wiki/FAQ) and [existing issues](https://github.com/SEApodEErman/hitsounds-rs/issues) first.
+        **Don't attach songs, mapsets, skins or sample packs you don't own.** Link the beatmap page or attach your `project.json` instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What went wrong, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a project with ...
+        2. Place a hit on ...
+        3. Export ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: hitsounds-rs version
+      description: Help > About.
+      placeholder: 0.1.0-alpha.1
+    validations:
+      required: true
+  - type: dropdown
+    id: build
+    attributes:
+      label: Build
+      options:
+        - Installer
+        - Portable
+        - Built from source
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Editor (placing, moving, selecting hits)
+        - Playback or preview sound
+        - Difficulty review or overrides
+        - Export (wrong sounds in game, failed export)
+        - Drum separation
+        - Mapset picker or Songs folder
+        - Install, update or startup
+        - Crash
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: in-game
+    attributes:
+      label: For wrong sounds in game
+      description: The difficulty, the time in the map (for example 01:23:456), what you placed, and what osu! played. Paste the Compare .osu lines for that spot if you can.
+  - type: textarea
+    id: crash-log
+    attributes:
+      label: crash.log
+      description: If the app crashed, paste or attach `%APPDATA%\dev.hitsounds-rs.app\crash.log`. Paths in it may include your Windows user name; edit them out if you prefer.
+      render: text
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2

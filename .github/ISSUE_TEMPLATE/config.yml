@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: FAQ and guides
+    url: https://github.com/SEApodEErman/hitsounds-rs/wiki
+    about: Setup, a first-project walkthrough and answers to common questions.

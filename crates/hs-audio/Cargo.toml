@@ -1,0 +1,17 @@
+[package]
+name = "hs-audio"
+description = "hitsounds-rs audio: buffers, offline mixing, and real-time playback."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+# Audio stack (see docs/architecture.md#audio-engine):
+#   cpal      - output device / callback
+#   symphonia - decode mp3/ogg/wav
+#   rubato    - resample samples to the device rate
+[dependencies]
+cpal = "0.18.2"
+rubato = "4.0.0"
+symphonia = { version = "0.6.1", default-features = false, features = ["mp3", "ogg", "vorbis", "wav", "pcm", "adpcm", "flac"] }
+thiserror.workspace = true

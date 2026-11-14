@@ -1,0 +1,59 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/osu-format",
+    "crates/hs-core",
+    "crates/hs-audio",
+    "crates/hs-export",
+    "crates/hs-separate",
+    "crates/hs-session",
+    "crates/hitsounds-rs",
+]
+
+[workspace.package]
+version = "0.1.0-alpha.1"
+edition = "2024"
+license = "MIT"
+rust-version = "1.88"
+
+[workspace.dependencies]
+osu-format = { path = "crates/osu-format" }
+hs-core = { path = "crates/hs-core" }
+hs-audio = { path = "crates/hs-audio" }
+hs-export = { path = "crates/hs-export" }
+hs-session = { path = "crates/hs-session" }
+hs-separate = { path = "crates/hs-separate" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tempfile = "3"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+# Line tables in a separate .pdb next to the exe, so crash.log backtraces name
+# functions and lines (D-75). `strip = true` would skip the .pdb.
+debug = "line-tables-only"
+strip = "none"
+
+# Decoding and resampling a whole song is unusably slow unoptimised, so the audio
+# dependencies are optimised in dev builds too.
+[profile.dev.package.symphonia-core]
+opt-level = 3
+[profile.dev.package.symphonia-bundle-mp3]
+opt-level = 3
+[profile.dev.package.symphonia-codec-vorbis]
+opt-level = 3
+[profile.dev.package.symphonia-format-ogg]
+opt-level = 3
+[profile.dev.package.rubato]
+opt-level = 3
+[profile.dev.package.rustfft]
+opt-level = 3
+[profile.dev.package.realfft]
+opt-level = 3
+[profile.dev.package.hs-audio]
+opt-level = 2

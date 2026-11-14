@@ -1,0 +1,11 @@
+[package]
+name = "osu-format"
+description = "Lossless reader/writer for osu!stable .osu files, focused on hitsound-relevant data."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true

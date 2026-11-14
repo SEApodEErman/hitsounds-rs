@@ -1,0 +1,24 @@
+# Rust
+/target/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# OS / editors
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+
+# Local test material (mapsets, stems, samples are copyrighted - never commit them)
+/sandbox/
+
+# Python tools (tools/demucs-export) and models made with them (D-71: never commit weights)
+__pycache__/
+*.onnx
+crates/hitsounds-rs/runtime/
+
+# Packaged releases (tools/package.ps1)
+/dist/

@@ -1,0 +1,19 @@
+[package]
+name = "hs-session"
+description = "hitsounds-rs editor session: open project, undo history, mapset watching, playback and app settings. No GUI dependency (D-48)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+osu-format.workspace = true
+hs-core.workspace = true
+hs-audio.workspace = true
+hs-export.workspace = true
+hs-separate.workspace = true
+sha2 = "0.10.9"
+notify = "8"
