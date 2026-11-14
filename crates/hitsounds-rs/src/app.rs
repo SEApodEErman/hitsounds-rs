@@ -224,7 +224,8 @@ impl Studio {
         self.picker = Some(Picker::new(purpose));
         self.dialog = Some(Dialog::Mapsets);
         if let Some(root) = self.state.as_ref().and_then(|s| s.songs_dir.clone()) {
-            self.songs.ensure(&root, crate::worker::songs_cache(), true, ctx);
+            self.songs
+                .ensure(&root, crate::worker::songs_cache(), true, ctx);
         }
     }
 

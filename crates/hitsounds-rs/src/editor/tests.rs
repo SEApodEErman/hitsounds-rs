@@ -161,9 +161,9 @@ impl Fixture {
         let diff = file.and_then(|f| self.view.project.diff(f));
         let events = diff.map(|d| d.apply_overrides(self.view.project.base_events()));
         let objects = self.view.layer.objects.as_ref().map(|o| &o.timeline);
-        let projection = objects.zip(diff).map(|(objects, diff)| {
-            hs_core::projection::project(&self.view.project, diff, objects)
-        });
+        let projection = objects
+            .zip(diff)
+            .map(|(objects, diff)| hs_core::projection::project(&self.view.project, diff, objects));
         self.view.layer = Layer::new(
             &self.view.project,
             file,
@@ -525,7 +525,10 @@ fn cut_and_paste_through_the_menu_acts_and_into_a_difficulty() {
     h.step();
     assert!(h.state().view.layer.contains(&(1, 2000)));
     // In a difficulty a paste is overrides; the base layer is untouched (D-17).
-    assert_eq!(h.state().view.project.base_events().collect::<Vec<_>>(), base);
+    assert_eq!(
+        h.state().view.project.base_events().collect::<Vec<_>>(),
+        base
+    );
 }
 
 #[test]

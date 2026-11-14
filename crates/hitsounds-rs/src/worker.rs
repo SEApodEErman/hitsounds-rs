@@ -119,9 +119,7 @@ impl Job {
             | Self::ReduceMotion(_)
             | Self::UpdateChecks(_)
             | Self::UiScale(_)
-            | Self::Levels(_) => {
-                "Saving settings"
-            }
+            | Self::Levels(_) => "Saving settings",
             Self::ImportStem | Self::RemoveStem | Self::ApplySeparation(_) => "Updating drum stem",
             Self::ChooseModel => "Checking the drums model",
             Self::ClearModel => "Saving settings",
@@ -598,7 +596,11 @@ impl State {
         Ok(())
     }
 
-    fn create(&mut self, slot: &mut Option<Session>, mapset: &Path) -> Result<Option<Outcome>, String> {
+    fn create(
+        &mut self,
+        slot: &mut Option<Session>,
+        mapset: &Path,
+    ) -> Result<Option<Outcome>, String> {
         let Some((session, changed)) = self.new_session(mapset)? else {
             return Ok(None);
         };
@@ -726,10 +728,14 @@ impl State {
                 else {
                     return Ok(None);
                 };
-                return Ok(self.open(slot, &file)?.or(Some(Outcome::Notice("Project opened".into()))));
+                return Ok(self
+                    .open(slot, &file)?
+                    .or(Some(Outcome::Notice("Project opened".into()))));
             }
             Job::OpenRecent(file) => {
-                return Ok(self.open(slot, &file)?.or(Some(Outcome::Notice("Project opened".into()))));
+                return Ok(self
+                    .open(slot, &file)?
+                    .or(Some(Outcome::Notice("Project opened".into()))));
             }
             Job::OpenRelocated { file, mapset } => {
                 let mapset = match mapset {
@@ -801,14 +807,24 @@ impl State {
             }
             Job::ChooseProjectsDir => {
                 let mut dialog = self.dialog("Choose where new projects go");
-                if let Some(dir) = self.settings.value.projects_dir.clone().or_else(dirs::document_dir) {
+                if let Some(dir) = self
+                    .settings
+                    .value
+                    .projects_dir
+                    .clone()
+                    .or_else(dirs::document_dir)
+                {
                     dialog = dialog.set_directory(dir);
                 }
                 let Some(path) = dialog.pick_folder() else {
                     return Ok(None);
                 };
                 let path = readable_dir(path)?;
-                if self.songs_dir().0.is_some_and(|songs| path.starts_with(songs)) {
+                if self
+                    .songs_dir()
+                    .0
+                    .is_some_and(|songs| path.starts_with(songs))
+                {
                     return Err("Choose a projects folder outside the Songs folder, so project files never end up in a mapset.".into());
                 }
                 self.change_settings(|settings| settings.set_projects_dir(Some(path)))?;
@@ -1088,10 +1104,20 @@ fn active(slot: &mut Option<Session>) -> Result<&mut Session, String> {
 fn free_project_path(dir: &Path, name: &str) -> PathBuf {
     let clean: String = name
         .chars()
-        .map(|c| if matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') || c.is_control() { '_' } else { c })
+        .map(|c| {
+            if matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') || c.is_control() {
+                '_'
+            } else {
+                c
+            }
+        })
         .collect();
     let clean = clean.trim_end_matches(['.', ' ']);
-    let clean = if clean.is_empty() { "New project" } else { clean };
+    let clean = if clean.is_empty() {
+        "New project"
+    } else {
+        clean
+    };
     (1..)
         .map(|n| match n {
             1 => dir.join(format!("{clean}.hsproj")),
@@ -1131,7 +1157,13 @@ mod tests {
         let first = free_project_path(dir.path(), "A: B?");
         assert_eq!(first, dir.path().join("A_ B_.hsproj"));
         std::fs::create_dir(&first).unwrap();
-        assert_eq!(free_project_path(dir.path(), "A: B?"), dir.path().join("A_ B_ (2).hsproj"));
-        assert_eq!(free_project_path(dir.path(), " . "), dir.path().join("New project.hsproj"));
+        assert_eq!(
+            free_project_path(dir.path(), "A: B?"),
+            dir.path().join("A_ B_ (2).hsproj")
+        );
+        assert_eq!(
+            free_project_path(dir.path(), " . "),
+            dir.path().join("New project.hsproj")
+        );
     }
 }

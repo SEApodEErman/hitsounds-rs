@@ -1005,7 +1005,9 @@ pub fn dialog(
                 .show(ui, |ui| match dialog {
                     Dialog::Settings => {
                         if let Some(state) = state {
-                            ui.add_enabled_ui(available, |ui| settings(ui, state, reduced, updates, emit));
+                            ui.add_enabled_ui(available, |ui| {
+                                settings(ui, state, reduced, updates, emit)
+                            });
                         } else {
                             ui.label(t::muted("Settings are loading."));
                         }
@@ -1290,7 +1292,10 @@ fn settings(
                     path_label(ui, path);
                     ui.label(t::meta("This folder is not available", t::WARNING));
                 } else {
-                    ui.label(t::meta("No osu! install was found in the usual place", t::MUTED));
+                    ui.label(t::meta(
+                        "No osu! install was found in the usual place",
+                        t::MUTED,
+                    ));
                 }
             }
         }
@@ -1321,7 +1326,10 @@ fn settings(
         if let Some(path) = &state.settings.projects_dir {
             path_label(ui, path);
             if !state.projects_ready {
-                ui.label(t::meta("This folder is not available, so new projects ask where to go", t::WARNING));
+                ui.label(t::meta(
+                    "This folder is not available, so new projects ask where to go",
+                    t::WARNING,
+                ));
             }
         }
         ui.horizontal(|ui| {
@@ -1439,12 +1447,7 @@ fn settings(
 }
 
 /// D-84: the startup check, its status, and the downloaded update.
-fn updates_section(
-    ui: &mut Ui,
-    state: &Snapshot,
-    updates: &crate::update::Status,
-    emit: Emit<'_>,
-) {
+fn updates_section(ui: &mut Ui, state: &Snapshot, updates: &crate::update::Status, emit: Emit<'_>) {
     use crate::update::{self, Status};
     widgets::section(ui, "Updates", |ui| {
         widgets::help(
