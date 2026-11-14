@@ -1,7 +1,7 @@
 //! D-52: a full export workspace with a live plan and a changed-lines comparison.
 
 use crate::{app::Intent, theme as t, views, widgets, worker::Job};
-use eframe::egui::{self, Align, Button, Context, Frame, Layout, ScrollArea, Ui};
+use eframe::egui::{self, Align, Button, Context, Frame, Layout, ScrollArea, Ui, vec2};
 use egui_phosphor::regular as icons;
 use hs_core::project::{AdditionOnlyNormal, ExportSettings, SampleFormat, WriteMode};
 use hs_export::{
@@ -661,13 +661,18 @@ fn show_diff(ui: &mut Ui, diff: &LineDiff) {
         .id_salt("changed-lines")
         .max_height(t::DIFF_VIEW_HEIGHT)
         .show_rows(ui, t::DIFF_LINE_HEIGHT, diff.rows.len(), |ui, range| {
+            // `show_rows` places rows by `DIFF_LINE_HEIGHT` alone, so each row must take
+            // exactly that height. `with_layout` would take all the height left in the
+            // scroll area and centre the line in it, pushing every row a viewport apart.
+            ui.spacing_mut().item_spacing.y = 0.0;
             for line in &diff.rows[range] {
                 let (sign, colour) = if line.added {
                     ('+', t::MATCHED)
                 } else {
                     ('−', t::ERROR)
                 };
-                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                let row = vec2(ui.available_width(), t::DIFF_LINE_HEIGHT);
+                ui.allocate_ui_with_layout(row, Layout::left_to_right(Align::Center), |ui| {
                     ui.label(t::meta(format!("{sign} {:>5}", line.number), colour));
                     ui.add(egui::Label::new(t::meta(&line.text, colour)).extend());
                 });
@@ -724,6 +729,42 @@ mod tests {
                 (true, 4, "500,-100,4,1,2,90,0,0"),
             ]
         );
+    }
+
+    #[test]
+    fn changed_lines_sit_one_line_apart() {
+        use egui_kittest::{Harness, kittest::Queryable};
+        let diff = LineDiff {
+            file: "hard.osu".into(),
+            label: "Hard".into(),
+            rows: (1..=3)
+                .map(|number| Line {
+                    number,
+                    added: true,
+                    text: format!("line-{number}"),
+                })
+                .collect(),
+        };
+        let mut themed = false;
+        let mut harness = Harness::builder()
+            .with_size(vec2(600.0, 400.0))
+            .build_ui(|ui| {
+                // Fonts set in one frame take effect from the next.
+                if themed {
+                    show_diff(ui, &diff);
+                } else {
+                    t::install(ui.ctx());
+                    themed = true;
+                }
+            });
+        harness.run();
+        let top = |text: &str| harness.get_by_label(text).rect().top();
+        let gap = top("line-2") - top("line-1");
+        assert!(
+            (gap - t::DIFF_LINE_HEIGHT).abs() < 0.5,
+            "rows are {gap} apart"
+        );
+        assert!((top("line-3") - top("line-2") - gap).abs() < 0.5);
     }
 
     #[test]
