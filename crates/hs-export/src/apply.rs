@@ -135,6 +135,7 @@ pub fn apply_hits(
         change.sample_set = false;
         changes.push(change);
     }
+    changes.sort_by(|a, b| a.point.time.total_cmp(&b.point.time));
     merge(points, &changes);
 
     // D-81: a reset edge plays the skin's hitnormal. An index without its own file for
@@ -181,6 +182,15 @@ pub fn apply_hits(
         change.sample_set = false;
         change.volume = false;
         merge(points, &[change]);
+
+        // The merge leaves out a hit's greenline when the point before it already gives
+        // its index and volume. This reset's greenline now sits between them, so the
+        // next hit gets its own greenline back; later hits inherit from that one as
+        // they did before. The resets after this one see it, since they come later.
+        let next = changes.partition_point(|c| c.point.time <= time);
+        if let Some(hit_change) = changes.get(next) {
+            merge(points, std::slice::from_ref(hit_change));
+        }
     }
 }
 
@@ -330,6 +340,37 @@ SliderTickRate:1
 
     fn lines(points: &[TimingPoint]) -> Vec<String> {
         points.iter().map(TimingPoint::serialize).collect()
+    }
+
+    #[test]
+    fn a_reset_between_two_hits_on_one_index_keeps_the_later_hit_on_it() {
+        // The Mahi export: two snares on index 7 with an empty circle between them. The
+        // second snare's greenline changes nothing at first, so the merge leaves it out;
+        // the empty circle then goes back to index 0 (index 7 has its own
+        // soft-hitnormal), and the second snare must not inherit that.
+        let doc = OsuDocument::parse(&MAP.replace(
+            "256,192,1000,1,0,0:0:0:0:
+",
+            "256,192,1000,1,0,0:0:0:0:
+256,192,1500,1,8,0:0:0:0:
+256,192,2000,1,0,0:0:0:0:
+",
+        ));
+        let tl = DiffTimeline::from_document(&doc).unwrap();
+        let mut objects = doc.hit_objects().unwrap();
+        let mut points = doc.timing_points().unwrap();
+        let hits = [snare(0), WrittenHit::reset(1), snare(2)];
+        apply_hits(&tl, &mut objects, &mut points, &hits, &schema_7(true), SampleSet::Normal);
+        let lines: Vec<_> = points.iter().map(TimingPoint::serialize).collect();
+        assert_eq!(
+            lines,
+            vec![
+                "0,500,4,2,0,70,1,0",
+                "1000,-100,4,2,7,80,0,0",
+                "1500,-100,4,2,0,80,0,0",
+                "2000,-100,4,2,7,80,0,0",
+            ]
+        );
     }
 
     #[test]
