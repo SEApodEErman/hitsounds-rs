@@ -16,6 +16,8 @@ your `.osu` files, with backups.
 
 ## Quick start
 
+Follow along with the [hitsounds-rs video tutorial](https://youtu.be/Sqws6Muv4F4) on YouTube.
+
 1. **Download** the latest build from [Releases](../../releases):
    - `hitsounds-rs-<version>-setup.exe` installs for your user (no admin), or
    - `hitsounds-rs-<version>-portable.zip`: unzip it to any folder you can write to.
